@@ -19,20 +19,35 @@
 # ---------------------------------------------------------------------------
 #  [0] 설치 : Colab에서 아래 한 줄의 맨 앞 '#'을 지우고 한 번 실행하세요.
 # ---------------------------------------------------------------------------
-# !pip install fredapi scikit-learn statsmodels xgboost tensorflow scipy matplotlib koreanize-matplotlib
+# !pip install fredapi yfinance scikit-learn statsmodels xgboost tensorflow scipy matplotlib koreanize-matplotlib
 
 # ===========================================================================
 #  [1] 설정 (상수) — 실험할 때 멘티들이 바꾸는 값은 대부분 여기 있습니다.
 # ===========================================================================
 FRED_API_KEY = ""          # ← 발급받은 FRED API 키를 이 따옴표 안에 붙여넣으세요.
 
-PRICE_SERIES = "SP500"     # FRED 주가 시리즈 (S&P500 지수)
+PRICE_SOURCE = "yfinance"  # "yfinance"(권장) 또는 "fred"
+#   FRED의 'SP500' 시리즈는 최근 약 10년치만 제공합니다.
+#   yfinance의 '^GSPC'는 훨씬 긴 역사를 주므로 표본이 늘어납니다.
+PRICE_TICKER = "^GSPC"     # yfinance용 (S&P500). 코스피는 "^KS11"
+PRICE_SERIES = "SP500"     # fred용 (PRICE_SOURCE="fred"일 때만 사용)
 RATE_SERIES  = "DGS2"      # FRED 금리 시리즈 (미국 2년물 국채금리, %)
-START = "2015-01-01"       # 데이터 시작일
+START = "2010-01-01"       # 데이터 시작일
 END   = "2025-01-01"       # 데이터 끝일
-# 참고: FRED의 'SP500' 시리즈는 최근 약 10년치만 제공합니다.
-#       그래서 실제 시작일은 위 START보다 늦을 수 있습니다(코드가 실제 범위를 출력합니다).
-#       더 긴 역사가 필요하면 yfinance의 '^GSPC'로 바꾸는 방법도 있습니다(다음 세션 주제).
+
+# ★ 클래스 불균형 대응
+#   상승일이 57%처럼 한쪽으로 치우치면, 모델은 "무조건 상승"만 외쳐도
+#   정확도가 높아 보입니다. 아래를 True로 두면 소수 클래스에 가중치를 줘서
+#   모델이 다수결을 흉내내지 못하게 막습니다.
+USE_CLASS_WEIGHT = True
+
+# ★ 시기별(체제별) 분석 구간 — 금리 환경이 다른 시기를 나눠서 봅니다.
+REGIMES = [
+    ("2010-2015 저금리기",   "2010-01-01", "2015-12-31"),
+    ("2016-2019 정상화기",   "2016-01-01", "2019-12-31"),
+    ("2020-2021 코로나기",   "2020-01-01", "2021-12-31"),
+    ("2022-2024 금리인상기", "2022-01-01", "2024-12-31"),
+]
 
 PRIMARY_HORIZON = 5        # 대표 예측 시계: "5거래일(약 1주) 뒤" 방향을 맞힌다
 HORIZONS = [1, 5, 20, 60]  # 예측 시계 민감도 실험에 쓸 값들 (1일/1주/1달/3달 뒤)
@@ -118,18 +133,38 @@ def load_data():
 
     try:
         fred = Fred(api_key=FRED_API_KEY)
-        price = fred.get_series(PRICE_SERIES, START, END)
-        rate  = fred.get_series(RATE_SERIES,  START, END)
+        rate = fred.get_series(RATE_SERIES, START, END)   # 금리는 항상 FRED
     except Exception as e:
         raise SystemExit(f"[오류] FRED 다운로드 실패: {e}\n키가 올바른지, 인터넷 연결을 확인하세요.")
 
+    if PRICE_SOURCE == "yfinance":
+        try:
+            import yfinance as yf
+        except ImportError:
+            raise SystemExit("[오류] yfinance가 없습니다. 맨 위 [0] 설치 줄을 실행하세요.")
+        px = yf.download(PRICE_TICKER, start=START, end=END,
+                         auto_adjust=True, progress=False)
+        if isinstance(px.columns, pd.MultiIndex):
+            px.columns = px.columns.get_level_values(0)
+        if len(px) == 0:
+            raise SystemExit("[오류] 주가 데이터를 받지 못했습니다.")
+        price = px["Close"]
+        src = f"{PRICE_TICKER}(yfinance)"
+    else:
+        price = fred.get_series(PRICE_SERIES, START, END)
+        src = f"{PRICE_SERIES}(FRED, 최근 10년만 제공)"
+
+    price.index = pd.to_datetime(price.index).tz_localize(None)
+    rate.index  = pd.to_datetime(rate.index)
+
     df = pd.concat({"close": price, "rate": rate}, axis=1)
-    df = df.dropna().sort_index()   # 두 시리즈가 모두 있는 거래일만 사용
+    df["rate"] = df["rate"].ffill()          # 금리는 휴일에 결측 → 직전 값 유지
+    df = df.dropna().sort_index()
     if len(df) < 500:
         raise SystemExit(f"[오류] 표본이 너무 적습니다({len(df)}개). 기간/시리즈를 확인하세요.")
 
     print("=" * 70)
-    print(f"[데이터] {PRICE_SERIES}(주가) + {RATE_SERIES}(금리)")
+    print(f"[데이터] {src} + {RATE_SERIES}(금리)")
     print(f"  실제 기간 : {df.index.min().date()} ~ {df.index.max().date()}")
     print(f"  표본 수   : {len(df):,}개 거래일")
     print("=" * 70)
@@ -188,7 +223,23 @@ def time_split_index(n, ratio):
 # ===========================================================================
 #  [5] 평가 지표 (정확도만 보지 않습니다)
 # ===========================================================================
+def auc_pvalue(auc, n_pos, n_neg):
+    """AUC가 0.5(판별력 없음)보다 유의하게 큰지 검정 (Hanley-McNeil 표준오차).
+       AUC는 임계값과 무관해서 클래스 불균형에 속지 않는 지표입니다."""
+    from scipy.stats import norm
+    if np.isnan(auc) or auc <= 0.5 or n_pos == 0 or n_neg == 0:
+        return np.nan
+    q1 = auc / (2 - auc)
+    q2 = 2 * auc ** 2 / (1 + auc)
+    se = np.sqrt((auc * (1 - auc) + (n_pos - 1) * (q1 - auc ** 2)
+                  + (n_neg - 1) * (q2 - auc ** 2)) / (n_pos * n_neg))
+    return float(1 - norm.cdf((auc - 0.5) / se))
+
+
 def evaluate(y_true, y_pred, y_score=None):
+    from scipy.stats import binomtest
+    from sklearn.metrics import balanced_accuracy_score, matthews_corrcoef
+
     y_true = np.asarray(y_true).astype(int)
     y_pred = np.asarray(y_pred).astype(int)
 
@@ -196,25 +247,41 @@ def evaluate(y_true, y_pred, y_score=None):
     prec = precision_score(y_true, y_pred, zero_division=0)
     rec  = recall_score(y_true, y_pred, zero_division=0)
     f1   = f1_score(y_true, y_pred, zero_division=0)
+
+    # 균형정확도: 상승·하락 각각의 정확도를 평균 → 불균형에 강함
+    bal_acc = balanced_accuracy_score(y_true, y_pred)
+    # MCC: -1~+1. 0이면 무작위. 불균형 데이터에서 가장 정직한 단일 지표로 꼽힘
+    mcc = matthews_corrcoef(y_true, y_pred)
+
     try:
         auc = roc_auc_score(y_true, y_score) if y_score is not None else np.nan
     except ValueError:
-        auc = np.nan                                    # 한 쪽 클래스만 있으면 AUC 계산 불가
+        auc = np.nan
 
     cm = confusion_matrix(y_true, y_pred, labels=[0, 1])
 
-    # 기준선(baseline): 아무 생각 없이 '항상 다수 클래스'에 베팅했을 때의 정확도
-    p_up = y_true.mean()
-    baseline = max(p_up, 1 - p_up)
-
-    # 이항검정: 맞힌 개수가 '동전 던지기(50%)'보다 유의하게 많은가?
-    from scipy.stats import binomtest
     n = len(y_true)
+    p_up = y_true.mean()
+    baseline = max(p_up, 1 - p_up)          # '항상 다수 클래스' 찍기의 정확도
+
+    # ★ 진단: 모델이 '상승'으로 예측한 날의 비율.
+    #   이 값이 95%처럼 극단적이면, 모델은 예측이 아니라 다수결을 흉내내는 중입니다.
+    pred_up_rate = float(y_pred.mean())
+
     n_correct = int((y_pred == y_true).sum())
-    pval = binomtest(n_correct, n, 0.5, alternative="greater").pvalue
+
+    # ★ 핵심 수정: 귀무가설은 '동전 던지기(0.5)'가 아니라 '기준선'이어야 합니다.
+    #   0.5로 검정하면, 아무 실력 없이 다수결만 흉내낸 모델도 '유의함'으로 나옵니다.
+    p_vs_baseline = binomtest(n_correct, n, baseline, alternative="greater").pvalue
+    p_vs_coin     = binomtest(n_correct, n, 0.5,      alternative="greater").pvalue  # 참고용
+
+    n_pos = int(y_true.sum()); n_neg = n - n_pos
+    p_auc = auc_pvalue(auc, n_pos, n_neg)
 
     return dict(acc=acc, prec=prec, rec=rec, f1=f1, auc=auc, cm=cm,
-                baseline=baseline, p_up=p_up, pval=pval, n=n)
+                bal_acc=bal_acc, mcc=mcc, pred_up_rate=pred_up_rate,
+                baseline=baseline, p_up=p_up, n=n,
+                p_vs_baseline=p_vs_baseline, p_vs_coin=p_vs_coin, p_auc=p_auc)
 
 
 # ===========================================================================
@@ -240,7 +307,10 @@ def run_arima(ret_series, split, horizon, order=ARIMA_ORDER):
 
 
 def run_rf(X_tr, y_tr, X_te):
-    m = RandomForestClassifier(n_estimators=200, max_depth=6,
+    # class_weight="balanced": 소수 클래스(대개 '하락')에 큰 가중치를 줘서
+    # 모델이 '무조건 상승'으로 도망가지 못하게 합니다.
+    cw = "balanced" if USE_CLASS_WEIGHT else None
+    m = RandomForestClassifier(n_estimators=200, max_depth=6, class_weight=cw,
                                random_state=SEED, n_jobs=-1)
     m.fit(X_tr, y_tr)
     return m.predict(X_te), m.predict_proba(X_te)[:, 1], m
@@ -248,8 +318,13 @@ def run_rf(X_tr, y_tr, X_te):
 
 def run_xgb(X_tr, y_tr, X_te):
     from xgboost import XGBClassifier
+    # XGBoost는 scale_pos_weight = (음성 수 / 양성 수) 로 균형을 맞춥니다.
+    spw = 1.0
+    if USE_CLASS_WEIGHT:
+        n_pos = float((y_tr == 1).sum()); n_neg = float((y_tr == 0).sum())
+        spw = n_neg / n_pos if n_pos > 0 else 1.0
     m = XGBClassifier(n_estimators=200, max_depth=3, learning_rate=0.05,
-                      subsample=0.9, colsample_bytree=0.9,
+                      subsample=0.9, colsample_bytree=0.9, scale_pos_weight=spw,
                       random_state=SEED, eval_metric="logloss", n_jobs=-1)
     m.fit(X_tr, y_tr)
     return m.predict(X_te), m.predict_proba(X_te)[:, 1], m
@@ -287,7 +362,18 @@ def run_lstm(sup, feature_cols, split, horizon):
         Dense(1, activation="sigmoid"),
     ])
     model.compile(optimizer="adam", loss="binary_crossentropy", metrics=["accuracy"])
-    model.fit(X_seq[tr], y_seq[tr], epochs=EPOCHS, batch_size=32, verbose=0)
+
+    # 클래스 가중치: 소수 클래스의 오답에 더 큰 벌점을 줍니다.
+    cw = None
+    if USE_CLASS_WEIGHT:
+        ytr_ = y_seq[tr]
+        n_pos = float((ytr_ == 1).sum()); n_neg = float((ytr_ == 0).sum())
+        total = n_pos + n_neg
+        if n_pos > 0 and n_neg > 0:
+            cw = {0: total / (2 * n_neg), 1: total / (2 * n_pos)}
+
+    model.fit(X_seq[tr], y_seq[tr], epochs=EPOCHS, batch_size=32,
+              verbose=0, class_weight=cw)
 
     score = model.predict(X_seq[te], verbose=0).ravel()
     pred = (score > 0.5).astype(int)
@@ -338,23 +424,46 @@ def run_all_models(df, feature_cols, horizon,
     return out
 
 
+def _r(v, k=3):
+    return np.nan if (isinstance(v, float) and np.isnan(v)) else round(v, k)
+
+
 def metrics_table(results, model_names):
+    """AUC를 맨 앞에 둡니다. 클래스가 불균형할 때 정확도는 오해를 부르기 때문입니다."""
     rows = []
     for name in model_names:
         r = results[name]
         rows.append({
             "모델": name,
-            "정확도": round(r["acc"], 3),
-            "정밀도": round(r["prec"], 3),
-            "재현율": round(r["rec"], 3),
-            "F1": round(r["f1"], 3),
-            "AUC": round(r["auc"], 3) if not np.isnan(r["auc"]) else np.nan,
-            "기준선": round(r["baseline"], 3),
-            "정확도-기준선": round(r["acc"] - r["baseline"], 3),
-            "p값(vs50%)": round(r["pval"], 3),
-            "학습시간(초)": round(r.get("time", np.nan), 2),
+            "AUC": _r(r["auc"]),                       # ★ 주 지표 (0.5 = 판별력 없음)
+            "AUC p값": _r(r["p_auc"]),                 # 0.05 미만이면 판별력 유의
+            "MCC": _r(r["mcc"]),                       # 0 = 무작위
+            "균형정확도": _r(r["bal_acc"]),             # 0.5 = 무작위
+            "정확도": _r(r["acc"]),
+            "기준선": _r(r["baseline"]),
+            "정확도-기준선": _r(r["acc"] - r["baseline"]),
+            "p값(vs기준선)": _r(r["p_vs_baseline"]),    # ★ 올바른 귀무가설
+            "상승예측비율": _r(r["pred_up_rate"]),      # ★ 0.9 넘으면 다수결 흉내 의심
+            "시간(초)": _r(r.get("time", np.nan), 2),
         })
     return pd.DataFrame(rows)
+
+
+def diagnose(results, model_names):
+    """모델이 진짜 예측을 하는지, 다수결을 흉내내는지 진단합니다."""
+    print("\n[진단] 모델이 다수결을 흉내내고 있지는 않은가?")
+    for name in model_names:
+        r = results[name]
+        flags = []
+        if r["pred_up_rate"] > 0.90 or r["pred_up_rate"] < 0.10:
+            flags.append(f"한쪽으로 {max(r['pred_up_rate'],1-r['pred_up_rate'])*100:.0f}% 쏠림")
+        if not np.isnan(r["auc"]) and r["auc"] <= 0.51:
+            flags.append("AUC≈0.5 → 판별력 없음")
+        if abs(r["mcc"]) < 0.05:
+            flags.append("MCC≈0 → 무작위 수준")
+        verdict = " / ".join(flags) if flags else "이상 없음 (실제 판별을 시도함)"
+        print(f"  - {name:<13}: {verdict}")
+    print("  ※ 다수결 흉내 모델은 정확도가 높아 보여도 AUC와 MCC가 0 근처입니다.")
 
 
 # ===========================================================================
@@ -382,6 +491,19 @@ def plot_accuracy_bar(results, model_names, baseline, horizon):
         plt.text(b.get_x() + b.get_width() / 2, a + 0.005, f"{a:.3f}", ha="center")
     plt.ylim(0.35, max(0.7, max(accs) + 0.05))
     plt.ylabel("정확도"); plt.title(f"모델별 정확도 (예측 시계 {horizon}일)")
+    plt.legend(); plt.tight_layout(); plt.show()
+
+
+def plot_auc_bar(results, model_names):
+    aucs = [results[m]["auc"] for m in model_names]
+    plt.figure(figsize=(8, 4.5))
+    bars = plt.bar(model_names, aucs, color="tab:purple", alpha=0.85)
+    plt.axhline(0.5, color="red", linestyle="--", label="판별력 없음 (AUC=0.5)")
+    for b, a in zip(bars, aucs):
+        if not np.isnan(a):
+            plt.text(b.get_x()+b.get_width()/2, a+0.004, f"{a:.3f}", ha="center")
+    plt.ylim(0.40, max(0.62, np.nanmax(aucs)+0.04))
+    plt.ylabel("AUC"); plt.title("모델별 AUC (주 지표)")
     plt.legend(); plt.tight_layout(); plt.show()
 
 
@@ -425,7 +547,51 @@ def plot_confusions(results, model_names):
 
 
 # ===========================================================================
-#  [9] 메인 : 실험 A / HORIZON 민감도 / 실험 B / 실험 C
+#  [8-2] 실험 E : 시기별(체제별) 분석
+#   금융 시계열은 시기마다 통계적 성질이 달라집니다(regime shift).
+#   "금리가 내리면 주가가 오른다"는 통념이 모든 시기에 성립하는지 직접 확인합니다.
+# ===========================================================================
+def regime_analysis(df, horizon):
+    print("\n" + "=" * 70)
+    print("[실험 E] 시기별 금리-주가 관계 (통념 검증)")
+    print("=" * 70)
+    print("통념: 금리가 내리면 주가가 오른다 → 상관계수가 음수(-)여야 함\n")
+
+    from scipy.stats import pearsonr
+    rows = []
+    for label, s, e in REGIMES:
+        seg = df.loc[s:e].dropna(subset=["rate_change", "return"])
+        if len(seg) < 60:
+            continue
+        # 같은 날의 금리 변화 vs 주가 등락률
+        r1, p1 = pearsonr(seg["rate_change"], seg["return"])
+        # horizon일 뒤 누적 수익률과 20일 금리 변화
+        fwd = seg["close"].shift(-horizon) / seg["close"] - 1
+        m = seg["rate_change_20"].notna() & fwd.notna()
+        r2, p2 = pearsonr(seg.loc[m, "rate_change_20"], fwd[m]) if m.sum() > 30 else (np.nan, np.nan)
+
+        rows.append({
+            "시기": label,
+            "일수": len(seg),
+            "평균금리(%)": round(seg["rate"].mean(), 2),
+            "당일 상관": round(r1, 3),
+            "p값": round(p1, 3),
+            f"{horizon}일후 상관": round(r2, 3) if not np.isnan(r2) else np.nan,
+            "통념 부합": "예" if r1 < 0 else "아니오",
+        })
+    out = pd.DataFrame(rows)
+    print(out.to_string(index=False))
+    print("\n[해석]")
+    print(" - '당일 상관'이 음수면 통념(금리↓ → 주가↑)과 일치합니다.")
+    print(" - 시기마다 부호가 달라진다면, 이 관계가 항상 성립하지 않는다는 뜻입니다.")
+    print("   (예: 경기침체 우려로 금리를 내릴 땐 주가도 함께 떨어질 수 있음)")
+    print(" - 학습 구간과 시험 구간의 금리 환경이 다르면, 모델이 배운 패턴이")
+    print("   시험 구간에서 통하지 않을 수 있습니다. 이것이 체제 변화(regime shift)입니다.")
+    return out
+
+
+# ===========================================================================
+#  [9] 메인 : 실험 A / HORIZON 민감도 / 실험 B / 실험 C / 실험 E
 # ===========================================================================
 def main():
     setup_korean_font()
@@ -454,10 +620,14 @@ def main():
           f"시험구간 상승비율 {meta['p_up']:.3f}")
     tableA = metrics_table(resA, MODELS)
     print(tableA.to_string(index=False))
+    diagnose(resA, MODELS)
     print("\n[해석 힌트]")
-    print(" - '정확도-기준선'이 양수여야 모델이 다수결보다 나은 것입니다.")
-    print(" - p값(vs50%)이 0.05보다 크면 '동전 던지기와 통계적으로 구별되지 않음'입니다.")
-    print(" - 정확도가 기준선을 못 넘어도 실패가 아닙니다. 시장이 효율적이라는 증거일 수 있습니다.")
+    print(" - ★ AUC를 먼저 보세요. 0.5면 판별력이 전혀 없다는 뜻입니다.")
+    print("   정확도는 상승일이 많으면 '무조건 상승'만 찍어도 높아지므로 속기 쉽습니다.")
+    print(" - 'p값(vs기준선)'은 다수결보다 나은지를 검정합니다. (0.5가 아니라 기준선이 옳은 비교 대상)")
+    print(" - '상승예측비율'이 0.9를 넘으면, 모델은 예측이 아니라 다수결을 흉내내는 중입니다.")
+    print(" - MCC와 균형정확도가 각각 0, 0.5 근처면 무작위와 다르지 않습니다.")
+    print(" - 판별력이 없다는 결과도 실패가 아닙니다. 효율적 시장 가설과 일치하는 발견입니다.")
 
     # ==================================================================
     #  HORIZON 민감도 : 예측 시계를 1/5/20/60일로 바꿔가며
@@ -470,7 +640,8 @@ def main():
     for h in HORIZONS:
         sweep[h] = run_all_models(df, ALL_FEATURES, h, models=MODELS)
         n_runs += len(MODELS)
-    # 표: 행=모델, 열=예측시계 (정확도 / 괄호 안은 기준선 대비)
+    # (1) 정확도 표 — 괄호 안은 기준선 대비 우위
+    print("\n[정확도]  괄호 = 기준선 대비 우위 (양수여야 다수결보다 나음)")
     rows = []
     for m in MODELS:
         row = {"모델": m}
@@ -482,9 +653,37 @@ def main():
     for h in HORIZONS:
         base_row[f"{h}일"] = f"{sweep[h][MODELS[0]]['baseline']:.3f}"
     print(pd.DataFrame(rows + [base_row]).to_string(index=False))
+
+    # (2) ★ AUC 표 — 클래스 불균형에 속지 않는 주 지표.
+    #     특정 시계에서만 0.5를 넘으면 우연, 여러 시계에서 일관되면 진짜 신호.
+    print("\n[AUC]  0.5 = 판별력 없음.  괄호 = AUC가 0.5보다 큰지의 p값")
+    rowsA = []
+    for m in MODELS:
+        row = {"모델": m}
+        for h in HORIZONS:
+            r = sweep[h][m]
+            a = r["auc"]; p = r["p_auc"]
+            cell = "N/A" if np.isnan(a) else (
+                f"{a:.3f} (p={p:.3f})" if not np.isnan(p) else f"{a:.3f} (—)")
+            row[f"{h}일"] = cell
+        rowsA.append(row)
+    print(pd.DataFrame(rowsA).to_string(index=False))
+
+    # (3) 다수결 흉내 진단
+    print("\n[상승예측비율]  0.9를 넘으면 모델이 다수결을 흉내내는 중")
+    rowsP = []
+    for m in MODELS:
+        row = {"모델": m}
+        for h in HORIZONS:
+            row[f"{h}일"] = f"{sweep[h][m]['pred_up_rate']:.2f}"
+        rowsP.append(row)
+    print(pd.DataFrame(rowsP).to_string(index=False))
+
     print(f"\n총 학습 횟수: {n_runs}회 (모델 {len(MODELS)} × 시계 {len(HORIZONS)})")
     print(" [주의] 여러 설정을 시도할수록 우연히 좋은 결과가 나올 확률이 커집니다(다중검정).")
-    print("        괄호 안 '기준선 대비'로 봐야 공정합니다. 시계가 길수록 기준선도 함께 오릅니다.")
+    print(f"        {n_runs}번 시도하면 그중 하나가 우연히 p<0.05를 받을 확률은 "
+          f"약 {1-(0.95**n_runs):.0%}입니다.")
+    print("        따라서 한 시계에서만 유의한 결과는 신뢰하지 마세요.")
 
     # ==================================================================
     #  실험 B : 금리변수를 빼면 vs 넣으면 (★ 연구 주제의 핵심 질문)
@@ -498,9 +697,14 @@ def main():
     rowsB = []
     for m in ML:
         b, f = res_base[m]["acc"], res_full[m]["acc"]
-        rowsB.append({"모델": m, "금리 뺐을 때": round(b, 3),
-                      "금리 넣었을 때": round(f, 3), "차이": round(f - b, 3)})
+        ab, af = res_base[m]["auc"], res_full[m]["auc"]
+        rowsB.append({"모델": m,
+                      "AUC 금리없음": _r(ab), "AUC 금리포함": _r(af),
+                      "AUC 차이": _r(af - ab),
+                      "정확도 금리없음": _r(b), "정확도 금리포함": _r(f),
+                      "정확도 차이": _r(f - b)})
     print(pd.DataFrame(rowsB).to_string(index=False))
+    print("\n※ AUC 차이를 우선 보세요. 정확도 차이는 클래스 불균형에 흔들립니다.")
     print("\n[해석 힌트]")
     print(" - 가설 H2: '금리변수를 넣어도 정확도가 크게 오르지 않는다(효율적 시장)'.")
     print("   차이가 거의 0이면 H2를 지지, 뚜렷이 +면 H2를 반박(더 흥미로운 발견!)합니다.")
@@ -519,9 +723,15 @@ def main():
     print("           오르지 않았다면 그 중요도는 '시기(time)를 알려주는 프록시'일 수 있습니다.")
     print("           (가설 H3) — 중요도가 곧 예측력 향상은 아닙니다.")
 
+    # ==================================================================
+    #  실험 E : 시기별(체제별) 금리-주가 관계
+    # ==================================================================
+    regime_analysis(df, PRIMARY_HORIZON)
+
     # ---- 시각화 ----
     print("\n[그래프 그리는 중...]")
     plot_price_rate(df)
+    plot_auc_bar(resA, MODELS)
     plot_accuracy_bar(resA, MODELS, resA["ARIMA"]["baseline"], PRIMARY_HORIZON)
     plot_horizon_sensitivity(sweep, MODELS, HORIZONS)
     plot_feature_importance(rf, ALL_FEATURES)
