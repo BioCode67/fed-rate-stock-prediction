@@ -71,6 +71,10 @@
   파이썬, 판다스(pandas), 시각화, 데이터 분석 실습을 다룹니다. 코드를 따라 하기 좋습니다.
   - 유튜브: https://www.youtube.com/channel/UCt2wAAXgm87ACiQnDHQEW6Q
   - 실습 코드 저장소: https://github.com/teddylee777/machine-learning
+- 생활코딩 (opentutorials.org)
+  파이썬을 포함한 프로그래밍 기초를 아주 쉽게 설명하는 무료 강의 사이트입니다. 깃허브·git
+  사용법을 배우고 싶다면 이곳의 "지옥에서 온 git"도 추천합니다.
+  https://opentutorials.org
 
 
 ## 머신러닝 개념 (한, 영상)
@@ -237,6 +241,73 @@ LSTM(1-a의 딥러닝 모델)을 이해하는 데 도움이 됩니다.
 - 통계: `p값 뜻`, `가설검정 쉽게`, `t검정`, `다중검정 문제`
 - 금융: `금리와 주가 관계`, `연준 FOMC 매파 비둘기`, `효율적 시장 가설`, `기준금리`
 - 실무: `백테스트`, `샤프지수 최대낙폭`, `생존편향 survivorship`, `거래비용`
+
+
+## 책으로 공부하고 싶다면 (한)
+
+영상보다 책이 편하면 아래를 추천합니다. 서점이나 도서관에서 제목으로 찾을 수 있습니다.
+
+- 혼자 공부하는 머신러닝+딥러닝 (박해선, 한빛미디어)
+  입문자에게 가장 무난한 한국어 교재입니다. 저자가 무료 동영상 강의도 제공합니다
+  (한빛미디어 유튜브에서 책 제목으로 검색).
+- 파이썬 라이브러리를 활용한 머신러닝 (안드레아스 뮐러, 한빛미디어)
+  우리가 쓰는 scikit-learn을 중심으로 한 실전 입문서입니다.
+- 핸즈온 머신러닝 (오렐리앙 제롱, 한빛미디어)
+  실무에서 표준으로 꼽히는 책입니다. 두껍지만 예제가 훌륭합니다. 조금 익숙해진 뒤 보세요.
+- 파이썬으로 배우는 알고리즘 트레이딩 (조대표)
+  위 "알고리즘 트레이딩·백테스트" 항목 참고. 전문이 무료로 공개되어 있습니다.
+
+
+## 용어와 자료 연결
+
+README의 "용어 정리"에서 특정 개념이 어렵게 느껴지면, 아래 자료로 바로 찾아가세요.
+
+- 정확도 / 정밀도 / 재현율 / F1: StatQuest "The Confusion Matrix", 김성범 [핵심 머신러닝]
+- 혼동행렬: StatQuest "The Confusion Matrix"
+- ROC-AUC: StatQuest "ROC and AUC"
+- 랜덤포레스트: StatQuest "Random Forests", 김성범 [핵심 머신러닝]
+- XGBoost(부스팅): StatQuest "Gradient Boost / XGBoost", 김성범 [핵심 머신러닝]
+- 신경망 / LSTM: 3Blue1Brown 신경망, 모두를 위한 딥러닝, 혁펜하임
+- p값 / 가설검정: Khan Academy 통계, 데이터 사이언스 스쿨
+- ARIMA / 시계열 / 정상성: Forecasting: Principles and Practice, 데이터 사이언스 스쿨
+- GARCH / 변동성: arch 문서, 검색어 "변동성 군집"
+- 금리 / 연준 / 매파·비둘기: 한국은행 경제교육, Bernanke & Kuttner 논문
+- 샤프지수 / 최대낙폭 / 백테스트: 파이썬으로 배우는 알고리즘 트레이딩, Investopedia
+
+
+## StatQuest에서 꼭 볼 영상 (영)
+
+전체 목록(https://statquest.org/video-index/)에서 아래 제목을 찾아 보세요. 한 편에 10분 안팎이고,
+우리 프로젝트에 바로 쓰이는 내용입니다.
+
+- Machine Learning Fundamentals: The Confusion Matrix
+- ROC and AUC, Clearly Explained!
+- Decision Trees
+- Random Forests Part 1: Building, Using and Evaluating
+- Gradient Boost 시리즈, XGBoost 시리즈
+- Cross Validation
+- The Central Limit Theorem, p-values (통계 기초)
+
+
+## 3Blue1Brown 신경망 시리즈 순서 (영)
+
+재생목록(https://www.youtube.com/playlist?list=PLZZWrBYkx7Otcjr3eCLZDCgfpqnxMY29s)을 순서대로 보면 됩니다.
+
+- 1편: 신경망이란 무엇인가 (https://www.youtube.com/watch?v=aircAruvnKk)
+- 2편: 경사하강법, 신경망은 어떻게 배우는가 (https://www.youtube.com/watch?v=IHZwWFHWa-w)
+- 3편 이후: 역전파(backpropagation)의 원리
+그림으로 이해하는 것이 목적이므로, 수식이 나와도 흐름만 따라가면 충분합니다.
+
+
+## 발표·보고서를 쓸 때
+
+- 논문을 인용할 때는 저자와 연도를 함께 적습니다. 예: Bernanke & Kuttner(2005).
+- 이 프로젝트에서 외부 수치로 인용할 수 있는 것은 "예상치 못한 25bp 인하 → 주가지수 약 1% 상승"
+  (Bernanke & Kuttner)뿐입니다. 나머지 수치는 우리가 직접 코드를 돌려 얻은 결과만 씁니다.
+- 그래프는 코드가 그려주는 것을 그대로 캡처해 쓰면 됩니다. 축 제목·범례가 한글로 나오도록
+  koreanize-matplotlib를 설치하세요.
+- 결과가 기대와 다르게 나와도 그대로 보고합니다. "예측이 어렵다"는 결론도 훌륭한 발견입니다.
+- 표를 캡처할 때는 코드가 출력한 정렬된 표를 그대로 쓰면 보기 좋습니다.
 
 
 ## 공부하다 막힐 때
