@@ -50,7 +50,7 @@ TICKERS = [
 # ===========================================================================
 #  [2] 임포트 & 재현성
 # ===========================================================================
-import os, warnings
+import os, warnings, unicodedata
 os.environ.setdefault("PYTHONHASHSEED", str(SEED))
 warnings.filterwarnings("ignore")
 import numpy as np
@@ -60,6 +60,32 @@ from sklearn.ensemble import RandomForestRegressor
 np.random.seed(SEED)
 
 FEATURES = ["mom_1m", "mom_6m", "mom_12m", "vol_6m", "volume_change"]
+
+
+# 표를 한글 폭까지 맞춰 출력하는 도우미 (Colab에서 한글 표가 어긋나는 것을 방지)
+def _disp_width(s):
+    return sum(2 if unicodedata.east_asian_width(c) in ("W", "F") else 1 for c in str(s))
+
+
+def _pad(s, width, right=False):
+    gap = max(0, width - _disp_width(s))
+    return (" " * gap + str(s)) if right else (str(s) + " " * gap)
+
+
+def print_table(df, index=False):
+    df = df.reset_index() if index else df.copy()
+    headers = [str(c) for c in df.columns]
+    def cell(v):
+        return "" if (v is None or (isinstance(v, float) and pd.isna(v))) else str(v)
+    rows = [[cell(v) for v in r] for r in df.itertuples(index=False, name=None)]
+    widths = [max([_disp_width(headers[j])] + [_disp_width(r[j]) for r in rows])
+              for j in range(len(headers))]
+    def line(cells):
+        return "   ".join(_pad(c, widths[j], right=(j != 0)) for j, c in enumerate(cells))
+    print(line(headers))
+    print("   ".join("-" * widths[j] for j in range(len(headers))))
+    for r in rows:
+        print(line(r))
 
 
 def setup_korean_font():
@@ -204,11 +230,13 @@ def summarize(port, model_name, bench_m):
     print("\n" + "=" * 60)
     print(f"[포트폴리오] {model_name} — 상위 {TOP_N}종목 동일비중 (비용 후)")
     print("=" * 60)
-    print(f"{'항목':<16}{'전략':>14}{'코스피(벤치)':>16}")
-    print(f"{'총수익률':<16}{ps['total']*100:>13.1f}%{pb['total']*100:>15.1f}%")
-    print(f"{'샤프지수':<15}{ps['sharpe']:>14.2f}{pb['sharpe']:>16.2f}")
-    print(f"{'최대낙폭':<15}{ps['mdd']*100:>13.1f}%{pb['mdd']*100:>15.1f}%")
-    win = "이김 ✓" if ps["total"] > pb["total"] else "짐 ✗"
+    tbl = pd.DataFrame({
+        "항목": ["총수익률", "샤프지수", "최대낙폭"],
+        "전략": [f"{ps['total']*100:.1f}%", f"{ps['sharpe']:.2f}", f"{ps['mdd']*100:.1f}%"],
+        "코스피(벤치)": [f"{pb['total']*100:.1f}%", f"{pb['sharpe']:.2f}", f"{pb['mdd']*100:.1f}%"],
+    })
+    print_table(tbl)
+    win = "이김" if ps["total"] > pb["total"] else "짐"
     print(f"\n[정직한 판정] 전략이 코스피를 {win} "
           f"({(ps['total']-pb['total'])*100:+.1f}%p)")
     if ps["total"] <= pb["total"]:

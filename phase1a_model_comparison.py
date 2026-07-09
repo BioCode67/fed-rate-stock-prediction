@@ -81,7 +81,7 @@ ALL_FEATURES = BASE_FEATURES + RATE_FEATURES
 # ===========================================================================
 #  [2] 임포트 & 재현성 고정
 # ===========================================================================
-import os, time, random, warnings
+import os, time, random, warnings, unicodedata
 os.environ.setdefault("PYTHONHASHSEED", str(SEED))
 os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "2")  # 텐서플로 잔소리 줄이기
 os.environ.setdefault("KERAS_BACKEND", "tensorflow")  # 케라스 백엔드를 텐서플로로 고정(안전장치)
@@ -98,6 +98,43 @@ from sklearn.metrics import (accuracy_score, precision_score, recall_score,
 
 random.seed(SEED)
 np.random.seed(SEED)
+
+
+# ---------------------------------------------------------------------------
+#  표를 예쁘게 출력하는 도우미
+#  한글(전각 문자)은 화면에서 2칸을 차지하는데, 파이썬 기본 정렬은 1칸으로 세어
+#  Colab에서 표가 어긋나 보입니다. 아래 함수는 '표시 폭'을 기준으로 칸을 맞춰
+#  한글이 섞여도 열이 가지런히 보이게 합니다.
+# ---------------------------------------------------------------------------
+def _disp_width(s):
+    return sum(2 if unicodedata.east_asian_width(c) in ("W", "F") else 1 for c in str(s))
+
+
+def _pad(s, width, right=False):
+    gap = max(0, width - _disp_width(s))
+    return (" " * gap + str(s)) if right else (str(s) + " " * gap)
+
+
+def print_table(df, index=False):
+    """DataFrame을 한글 폭까지 고려해 열을 맞춰 출력합니다."""
+    df = df.reset_index() if index else df.copy()
+    headers = [str(c) for c in df.columns]
+
+    def cell(v):
+        if v is None or (isinstance(v, float) and pd.isna(v)):
+            return ""
+        return str(v)
+
+    rows = [[cell(v) for v in r] for r in df.itertuples(index=False, name=None)]
+    widths = [max([_disp_width(headers[j])] + [_disp_width(r[j]) for r in rows])
+              for j in range(len(headers))]
+    # 첫 열(이름표)은 왼쪽, 숫자 열들은 오른쪽 정렬이 읽기 편합니다.
+    def line(cells):
+        return "   ".join(_pad(c, widths[j], right=(j != 0)) for j, c in enumerate(cells))
+    print(line(headers))
+    print("   ".join("-" * widths[j] for j in range(len(headers))))
+    for r in rows:
+        print(line(r))
 
 
 def setup_korean_font():
@@ -580,7 +617,7 @@ def regime_analysis(df, horizon):
             "통념 부합": "예" if r1 < 0 else "아니오",
         })
     out = pd.DataFrame(rows)
-    print(out.to_string(index=False))
+    print_table(out)
     print("\n[해석]")
     print(" - '당일 상관'이 음수면 통념(금리↓ → 주가↑)과 일치합니다.")
     print(" - 시기마다 부호가 달라진다면, 이 관계가 항상 성립하지 않는다는 뜻입니다.")
@@ -619,7 +656,7 @@ def main():
     print(f"학습 {meta['split']}개 / 시험 {meta['n_test']}개, "
           f"시험구간 상승비율 {meta['p_up']:.3f}")
     tableA = metrics_table(resA, MODELS)
-    print(tableA.to_string(index=False))
+    print_table(tableA)
     diagnose(resA, MODELS)
     print("\n[해석 힌트]")
     print(" - ★ AUC를 먼저 보세요. 0.5면 판별력이 전혀 없다는 뜻입니다.")
@@ -652,7 +689,7 @@ def main():
     base_row = {"모델": "기준선(다수결)"}
     for h in HORIZONS:
         base_row[f"{h}일"] = f"{sweep[h][MODELS[0]]['baseline']:.3f}"
-    print(pd.DataFrame(rows + [base_row]).to_string(index=False))
+    print_table(pd.DataFrame(rows + [base_row]))
 
     # (2) ★ AUC 표 — 클래스 불균형에 속지 않는 주 지표.
     #     특정 시계에서만 0.5를 넘으면 우연, 여러 시계에서 일관되면 진짜 신호.
@@ -667,7 +704,7 @@ def main():
                 f"{a:.3f} (p={p:.3f})" if not np.isnan(p) else f"{a:.3f} (—)")
             row[f"{h}일"] = cell
         rowsA.append(row)
-    print(pd.DataFrame(rowsA).to_string(index=False))
+    print_table(pd.DataFrame(rowsA))
 
     # (3) 다수결 흉내 진단
     print("\n[상승예측비율]  0.9를 넘으면 모델이 다수결을 흉내내는 중")
@@ -677,7 +714,7 @@ def main():
         for h in HORIZONS:
             row[f"{h}일"] = f"{sweep[h][m]['pred_up_rate']:.2f}"
         rowsP.append(row)
-    print(pd.DataFrame(rowsP).to_string(index=False))
+    print_table(pd.DataFrame(rowsP))
 
     print(f"\n총 학습 횟수: {n_runs}회 (모델 {len(MODELS)} × 시계 {len(HORIZONS)})")
     print(" [주의] 여러 설정을 시도할수록 우연히 좋은 결과가 나올 확률이 커집니다(다중검정).")
@@ -703,7 +740,7 @@ def main():
                       "AUC 차이": _r(af - ab),
                       "정확도 금리없음": _r(b), "정확도 금리포함": _r(f),
                       "정확도 차이": _r(f - b)})
-    print(pd.DataFrame(rowsB).to_string(index=False))
+    print_table(pd.DataFrame(rowsB))
     print("\n※ AUC 차이를 우선 보세요. 정확도 차이는 클래스 불균형에 흔들립니다.")
     print("\n[해석 힌트]")
     print(" - 가설 H2: '금리변수를 넣어도 정확도가 크게 오르지 않는다(효율적 시장)'.")

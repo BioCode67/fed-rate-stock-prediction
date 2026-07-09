@@ -49,7 +49,7 @@ ALL_FEATURES  = BASE_FEATURES + RATE_FEATURES
 # ===========================================================================
 #  [2] 임포트 & 재현성
 # ===========================================================================
-import os, random, warnings
+import os, random, warnings, unicodedata
 os.environ.setdefault("PYTHONHASHSEED", str(SEED))
 warnings.filterwarnings("ignore")
 import numpy as np
@@ -57,6 +57,32 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from sklearn.ensemble import RandomForestClassifier
 random.seed(SEED); np.random.seed(SEED)
+
+
+# 표를 한글 폭까지 맞춰 출력하는 도우미 (Colab에서 한글 표가 어긋나는 것을 방지)
+def _disp_width(s):
+    return sum(2 if unicodedata.east_asian_width(c) in ("W", "F") else 1 for c in str(s))
+
+
+def _pad(s, width, right=False):
+    gap = max(0, width - _disp_width(s))
+    return (" " * gap + str(s)) if right else (str(s) + " " * gap)
+
+
+def print_table(df, index=False):
+    df = df.reset_index() if index else df.copy()
+    headers = [str(c) for c in df.columns]
+    def cell(v):
+        return "" if (v is None or (isinstance(v, float) and pd.isna(v))) else str(v)
+    rows = [[cell(v) for v in r] for r in df.itertuples(index=False, name=None)]
+    widths = [max([_disp_width(headers[j])] + [_disp_width(r[j]) for r in rows])
+              for j in range(len(headers))]
+    def line(cells):
+        return "   ".join(_pad(c, widths[j], right=(j != 0)) for j, c in enumerate(cells))
+    print(line(headers))
+    print("   ".join("-" * widths[j] for j in range(len(headers))))
+    for r in rows:
+        print(line(r))
 
 
 def setup_korean_font():
@@ -219,14 +245,16 @@ def summarize(bt, model_name, n_retrains):
     print("\n" + "=" * 66)
     print(f"[백테스트 결과] 모델 = {model_name}  (재학습 {n_retrains}회)")
     print("=" * 66)
-    print(f"{'항목':<22}{'전략(비용후)':>16}{'매수후보유(B&H)':>18}")
-    print(f"{'총수익률':<22}{m_strat['total']*100:>15.1f}%{m_bh['total']*100:>17.1f}%")
-    print(f"{'연환산수익률(CAGR)':<20}{m_strat['cagr']*100:>15.1f}%{m_bh['cagr']*100:>17.1f}%")
-    print(f"{'샤프지수(연율)':<21}{m_strat['sharpe']:>16.2f}{m_bh['sharpe']:>18.2f}")
-    print(f"{'최대낙폭(MDD)':<21}{m_strat['mdd']*100:>15.1f}%{m_bh['mdd']*100:>17.1f}%")
-    print(f"{'매매 횟수':<22}{n_trades:>16}{'-':>18}")
-    print(f"{'총 거래비용':<21}{total_cost*100:>15.1f}%{'-':>18}")
-    print(f"{'보유일 승률':<21}{win_rate*100:>15.1f}%{'-':>18}")
+    tbl = pd.DataFrame({
+        "항목": ["총수익률", "연환산수익률(CAGR)", "샤프지수(연율)", "최대낙폭(MDD)",
+                 "매매 횟수", "총 거래비용", "보유일 승률"],
+        "전략(비용후)": [f"{m_strat['total']*100:.1f}%", f"{m_strat['cagr']*100:.1f}%",
+                        f"{m_strat['sharpe']:.2f}", f"{m_strat['mdd']*100:.1f}%",
+                        f"{n_trades}", f"{total_cost*100:.1f}%", f"{win_rate*100:.1f}%"],
+        "매수후보유(B&H)": [f"{m_bh['total']*100:.1f}%", f"{m_bh['cagr']*100:.1f}%",
+                          f"{m_bh['sharpe']:.2f}", f"{m_bh['mdd']*100:.1f}%", "-", "-", "-"],
+    })
+    print_table(tbl)
 
     # --- 정직한 판정 ---
     print("\n[정직한 판정]")
