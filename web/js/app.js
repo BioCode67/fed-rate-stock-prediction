@@ -3,12 +3,15 @@
  * ==========================================================================*/
 (function (root) {
   'use strict';
-  const U = root.U, D = root.D, ML = root.ML, M = root.M, C = root.C, B = root.B, S = root.S;
+  const U = root.U, D = root.D, ML = root.ML, M = root.M, C = root.C, B = root.B, S = root.S,
+    E = root.E, X = root.X;
   const $ = U.$, $$ = U.$$;
 
   const state = {
     data: null, feats: null, supCache: {},
-    models: null, bt: null, sim: null, simTimer: null
+    models: null, bt: null, sim: null, simTimer: null,
+    tone: null,                 // 붙여넣은 성명서 톤 점수 (날짜 → 값)
+    uni: null, panel: null, cross: null   // 여러 종목 데이터와 순위 전략 결과
   };
 
   /* ==========================================================================
@@ -404,6 +407,99 @@
     tw.appendChild(note);
   }
 
+  /* --------------------------------------------------------------------------
+   *  예측 시계 민감도 (1·5·20·60일)
+   * ------------------------------------------------------------------------*/
+  async function runHorizonSweep() {
+    const ids = selectedModels().filter(function (i) { return !ML.isRule(i); });
+    if (!ids.length) ids.push('boosting');
+    const modelId = ids[0];
+    const cols = featureCols();
+    const opt = { trainRatio: +$('#mRatio').value, threshold: +$('#mThreshold').value, modelOpt: { classWeight: $('#mWeight').checked, seed: 42 } };
+    const HZ = [1, 5, 20, 60];
+
+    $('#runHorizon').disabled = true;
+    const rows = [], items = [];
+    for (let k = 0; k < HZ.length; k++) {
+      status('#modelStatus', ML.modelName(modelId) + ' — 예측 시계 ' + HZ[k] + '일 학습 중…');
+      progress('#modelProg', k / HZ.length);
+      await U.yield_();
+      const sup = getSup(HZ[k], cols);
+      const r = B.holdout(sup, modelId, opt);
+      const m = r.metrics;
+      rows.push([
+        HZ[k] + '일 뒤', m.n.toLocaleString('ko-KR'), U.fmt(m.acc, 3), U.fmt(m.baseline, 3),
+        '<span class="' + (m.edge > 0 ? 'up' : 'down') + '">' + (m.edge >= 0 ? '+' : '') + U.fmt(m.edge, 3) + '</span>',
+        U.fmt(m.auc, 3), U.fmt(m.upRate, 3)
+      ]);
+      items.push({ label: HZ[k] + '일 뒤', value: m.auc, color: C.seriesColor(k) });
+    }
+    progress('#modelProg', null);
+    $('#runHorizon').disabled = false;
+    status('#modelStatus', '예측 시계 비교 완료 (' + ML.modelName(modelId) + ').');
+
+    const tw = $('#horizonTable'); tw.innerHTML = '';
+    tw.appendChild(U.table(['예측 시계', '시험 표본', '정확도', '기준선', '차이', 'AUC', '상승예측비율'], rows));
+    $('#horizonResult').classList.remove('hidden');
+    C.bars($('#chartHorizon'), { items: items, baseValue: 0.5, xMin: 0.42, xMax: 0.58, vFmt: function (v) { return U.fmt(v, 3); }, padL: 90 });
+  }
+
+  /* --------------------------------------------------------------------------
+   *  시기별(체제별) 성적 — 한 시기에서만 잘 맞는 모델인지 확인 (H3)
+   * ------------------------------------------------------------------------*/
+  function runRegimeSplit() {
+    const st = state.models;
+    if (!st) { status('#modelStatus', '먼저 "학습하고 비교하기"를 실행하세요.'); return; }
+    const sup = st.sup;
+    const results = st.results.filter(function (r) { return !ML.isRule(r.modelId); });
+    if (!results.length) { status('#modelStatus', '기준선 말고 AI 모델을 하나 이상 골라 주세요.'); return; }
+
+    // 시험 구간을 연도 기준으로 3~4토막 냅니다.
+    const start = results[0].split;
+    const testDates = sup.dates.slice(start);
+    if (testDates.length < 200) { status('#modelStatus', '시험 구간이 짧아 시기별로 나누기 어렵습니다.'); return; }
+    const nSeg = testDates.length >= 900 ? 4 : 3;
+    const segs = [];
+    for (let s = 0; s < nSeg; s++) {
+      const a = Math.floor(testDates.length * s / nSeg);
+      const b = Math.floor(testDates.length * (s + 1) / nSeg);
+      segs.push({ a: a, b: b, label: U.dstr(testDates[a]).slice(0, 7) + ' ~ ' + U.dstr(testDates[b - 1]).slice(0, 7) });
+    }
+
+    const head = ['시기', '표본'].concat(results.map(function (r) { return r.name + ' AUC'; }));
+    const rows = segs.map(function (sg) {
+      const row = [sg.label, (sg.b - sg.a).toLocaleString('ko-KR')];
+      results.forEach(function (r) {
+        const y = [], p = [];
+        for (let i = sg.a; i < sg.b; i++) { y.push(sup.y[start + i]); p.push(r.probaTest[i]); }
+        const m = M.classify(Int8Array.from(y), Float64Array.from(p), st.opt.threshold);
+        row.push(U.fmt(m.auc, 3) + ' <span class="tiny">(정확도 ' + U.fmt(m.acc, 3) + ' / 기준선 ' + U.fmt(m.baseline, 3) + ')</span>');
+      });
+      return row;
+    });
+    const tw = $('#regimeTable'); tw.innerHTML = '';
+    tw.appendChild(U.table(head, rows));
+
+    // 시기별 편차가 크면 경고
+    const spread = results.map(function (r) {
+      const vals = segs.map(function (sg) {
+        const y = [], p = [];
+        for (let i = sg.a; i < sg.b; i++) { y.push(sup.y[start + i]); p.push(r.probaTest[i]); }
+        return M.auc(Int8Array.from(y), Float64Array.from(p));
+      }).filter(isFinite);
+      return { name: r.name, range: Math.max.apply(null, vals) - Math.min.apply(null, vals) };
+    });
+    const worst = spread.sort(function (a, b) { return b.range - a.range; })[0];
+    const note = U.el('div', 'note ' + (worst && worst.range > 0.08 ? 'warn' : ''));
+    note.innerHTML = worst && worst.range > 0.08
+      ? '<strong>' + worst.name + '</strong>의 AUC가 시기에 따라 ' + U.fmt(worst.range, 3) +
+        '만큼 출렁입니다. 전체 평균 성적이 특정 시기에서만 나온 것일 수 있으니 시기별 표를 함께 보고하세요.'
+      : '시기별 AUC 차이가 크지 않습니다. 특정 시기에만 통하는 성적은 아니라는 신호입니다(그래도 표본이 적을 수 있습니다).';
+    tw.appendChild(note);
+    $('#regimeResult').classList.remove('hidden');
+    status('#modelStatus', '시기별 비교 완료.');
+  }
+
   /* ==========================================================================
    *  백테스트
    * ========================================================================*/
@@ -777,6 +873,357 @@
   }
 
   /* ==========================================================================
+   *  이벤트 스터디 (Phase 2)
+   * ========================================================================*/
+  function eventDateStrings(data) {
+    if (data.isPolicyDay) {
+      const out = [];
+      for (let i = 0; i < data.isPolicyDay.length; i++) if (data.isPolicyDay[i]) out.push(U.dstr(data.dates[i]));
+      return { list: out, label: '가상 정책 발표일', synthetic: true };
+    }
+    return { list: FOMC_DATES, label: 'FOMC 발표일', synthetic: false };
+  }
+
+  function runEvent() {
+    const d = state.data;
+    const ret = state.feats['return'];
+    const src = eventDateStrings(d);
+    const events = E.locate(d.dates, src.list);
+    if (events.length < 5) {
+      status('#evStatus', '데이터 기간 안에 발표일이 ' + events.length + '개뿐입니다. 기간을 늘리거나 다른 데이터를 쓰세요.');
+      return;
+    }
+    const before = +$('#evBefore').value, after = +$('#evAfter').value;
+    const car = E.car(ret, events, before, after);
+    const rows = E.reactions(d, ret, events);
+    if (state.tone) rows.forEach(function (r) { const v = state.tone[r.date]; if (v !== undefined) r.tone = v; });
+
+    const mode = $('#evGroup').value;
+    const useTone = mode === 'tone' && state.tone;
+    if (mode === 'tone' && !state.tone) {
+      status('#evStatus', '톤 점수가 없습니다. 아래 상자에 붙여넣고 "톤 점수 적용"을 누르거나, 기준을 금리 변화로 바꾸세요.');
+      return;
+    }
+    const groupBy = useTone ? function (r) { return r.tone; } : function (r) { return r.rateChg; };
+    const groupName = useTone ? ['매파(톤 +)', '비둘기(톤 −)'] : ['금리 오름(매파적 반응)', '금리 내림(비둘기적 반응)'];
+    if (!useTone && !d.rate) {
+      status('#evStatus', '이 데이터에는 금리가 없어 금리 변화로 나눌 수 없습니다. 금리가 있는 데이터를 쓰거나 톤 점수를 넣으세요.');
+      return;
+    }
+
+    $('#evResult').classList.remove('hidden');
+
+    // 타일
+    const sameAll = rows.map(function (r) { return r.sameDay; }).filter(isFinite);
+    const nextAll = rows.map(function (r) { return r.nextDay; }).filter(isFinite);
+    const carEnd = car.mean[car.mean.length - 1];
+    const tiles = [
+      ['이벤트 수', car.count.toLocaleString('ko-KR') + '회', src.label + (src.synthetic ? ' (가상)' : '')],
+      ['발표일 평균 수익률', U.signPct(U.mean(sameAll), 2), '표본 ' + sameAll.length + '회'],
+      ['다음 날 평균', U.signPct(U.mean(nextAll), 2), '표본 ' + nextAll.length + '회'],
+      ['+' + after + '일 누적 초과', U.signPct(carEnd, 2), '평균 대비 초과분']
+    ];
+    const box = $('#evTiles'); box.innerHTML = '';
+    tiles.forEach(function (t) {
+      const el = U.el('div', 'tile');
+      el.appendChild(U.el('div', 'label', t[0]));
+      el.appendChild(U.el('div', 'value', t[1]));
+      el.appendChild(U.el('div', 'sub', t[2]));
+      box.appendChild(el);
+    });
+
+    // CAR 곡선
+    const labels = [];
+    for (let k = -before; k <= after; k++) labels.push((k > 0 ? '+' : '') + k + '일');
+    const up = [], dn = [];
+    for (let k = 0; k < car.mean.length; k++) { up.push(car.mean[k] + 1.96 * car.se[k]); dn.push(car.mean[k] - 1.96 * car.se[k]); }
+    const carSeries = [
+      { name: '평균 누적수익률', values: Array.from(car.mean), color: C.seriesColor(0) },
+      { name: '95% 구간(위)', values: up, color: C.mutedColor(), width: 1, dash: [4, 4] },
+      { name: '95% 구간(아래)', values: dn, color: C.mutedColor(), width: 1, dash: [4, 4] }
+    ];
+    C.line($('#chartCar'), {
+      labels: labels, series: carSeries, zeroLine: 0,
+      marks: [{ index: before, label: '발표 이후 첫 거래일' }],
+      yFmt: function (v) { return U.pct(v, 2); }
+    });
+    const cl = $('#evCarLegend'); cl.innerHTML = '';
+    cl.appendChild(C.legend([
+      { name: '평균 누적수익률', color: C.seriesColor(0) },
+      { name: '95% 신뢰구간', color: C.mutedColor() }
+    ]));
+
+    // 집단 비교
+    const cmpSame = E.compare(rows, groupBy, 'sameDay');
+    const cmpNext = E.compare(rows, groupBy, 'nextDay');
+    const trows = [
+      ['발표 당일', cmpSame.hawk.length, U.signPct(cmpSame.meanHawk, 2), cmpSame.dove.length, U.signPct(cmpSame.meanDove, 2),
+        U.signPct(cmpSame.diff, 2), U.fmt(cmpSame.t, 2), U.fmt(cmpSame.p, 4)],
+      ['다음 날', cmpNext.hawk.length, U.signPct(cmpNext.meanHawk, 2), cmpNext.dove.length, U.signPct(cmpNext.meanDove, 2),
+        U.signPct(cmpNext.diff, 2), U.fmt(cmpNext.t, 2), U.fmt(cmpNext.p, 4)]
+    ];
+    const tw = $('#evTable'); tw.innerHTML = '';
+    tw.appendChild(U.table(['구분', groupName[0] + ' 수', '평균', groupName[1] + ' 수', '평균', '차이', 't', 'p값'], trows));
+
+    const sig = (isFinite(cmpSame.p) && cmpSame.p < 0.05) || (isFinite(cmpNext.p) && cmpNext.p < 0.05);
+    $('#evTest').innerHTML = '<div class="note ' + (sig ? 'ok' : 'warn') + '">' +
+      '<strong>가설 H6 — 발표 성격에 따라 주가 반응이 다른가?</strong><br>' +
+      (sig ? '두 집단의 평균 차이가 통계적으로 유의합니다(p&lt;0.05). 다만 이벤트가 ' + car.count +
+             '회뿐이라 표본이 적고, 여러 조합을 시도하면 우연히 유의해 보일 수 있습니다(다중검정).'
+           : '두 집단의 평균 차이가 통계적으로 유의하지 않습니다. 이벤트 수가 적어(표본 ' + car.count +
+             '회) 검정력이 낮은 탓일 수도 있습니다. 그대로 보고하는 것이 정직한 결과입니다.') +
+      '</div>' +
+      (useTone ? '' : '<p class="small">지금은 톤 점수 대신 <strong>발표일 금리 변화</strong>로 나눴습니다. ' +
+        '금리가 오른 날을 매파적 반응, 내린 날을 비둘기적 반응으로 본 것이며, 성명서 문구를 읽은 결과가 아닙니다.</p>');
+
+    // 산점도
+    const pts = rows.filter(function (r) { return isFinite(groupBy(r)) && isFinite(r.nextDay); })
+      .map(function (r) { return { x: groupBy(r), y: r.nextDay }; });
+    $('#evScatterTitle').textContent = (useTone ? '성명서 톤' : '발표일 금리 변화(%p)') + ' vs 다음 날 수익률';
+    C.scatter($('#chartEvScatter'), {
+      points: pts,
+      xFmt: function (v) { return U.fmt(v, useTone ? 2 : 3); },
+      yFmt: function (v) { return U.pct(v, 1); }
+    });
+    const corr = U.pearson(pts.map(function (p) { return p.x; }), pts.map(function (p) { return p.y; }));
+    $('#evCorr').innerHTML = '<p class="small">상관계수 r = ' + U.fmt(corr.r, 3) + ' (p = ' + U.fmt(corr.p, 4) +
+      ', 표본 ' + corr.n + '개). ' + (isFinite(corr.p) && corr.p < 0.05
+        ? '우연으로 보기 어려운 관계입니다.' : '통계적으로 뚜렷한 관계라고 말하기 어렵습니다.') + '</p>';
+
+    // 이벤트 목록 (최근 15개)
+    const lw = $('#evList'); lw.innerHTML = '';
+    const lrows = rows.slice(-15).reverse().map(function (r) {
+      return [r.date, r.tradeDate, U.signPct(r.sameDay, 2), U.signPct(r.nextDay, 2),
+        isFinite(r.rateChg) ? U.fmt(r.rateChg, 3) : '—', isFinite(r.tone) ? U.fmt(r.tone, 3) : '—'];
+    });
+    lw.appendChild(U.table(['발표일', '기준 거래일', '당일 수익률', '다음 날', '금리 변화(%p)', '톤'], lrows));
+
+    status('#evStatus', '완료. ' + src.label + ' ' + car.count + '회 · 창 −' + before + '일 ~ +' + after + '일' +
+      (src.synthetic ? ' · 가상 데이터의 가상 발표일입니다.' : ''));
+  }
+
+  /* ==========================================================================
+   *  종목 순위 예측 (Phase 3)
+   * ========================================================================*/
+  function makeUniFromControls() {
+    return D.makeDemoUniverse({
+      nStock: +$('#uniN').value,
+      signal: +$('#uniSignal').value,
+      seed: +$('#uniSeed').value
+    });
+  }
+
+  function setUniverse(uni) {
+    state.uni = uni;
+    state.panel = null;
+    $('#xResult').classList.add('hidden');
+    status('#xStatus', uni.meta.name + ' · ' + uni.tickers.length + '종목 · ' +
+      U.dstr(uni.dates[0]) + ' ~ ' + U.dstr(uni.dates[uni.dates.length - 1]) +
+      (uni.meta.synthetic ? ' (가상 데이터)' : ''));
+  }
+
+  async function runCross() {
+    if (!state.uni) setUniverse(makeUniFromControls());
+    const uni = state.uni;
+    if (!state.panel) {
+      status('#xStatus', '월별 데이터 만드는 중…');
+      await U.yield_();
+      state.panel = X.buildPanel(uni);
+    }
+    const panel = state.panel;
+    if (panel.rows.length < 300) {
+      status('#xStatus', '월별 관측이 ' + panel.rows.length + '행뿐이라 학습이 어렵습니다. 기간이나 종목 수를 늘리세요.');
+      return;
+    }
+    $('#runCross').disabled = true;
+    const res = await X.run(panel, uni, {
+      modelId: $('#xModel').value,
+      topN: +$('#xTopN').value,
+      warmupMonths: +$('#xWarmup').value,
+      costPerSide: (+$('#xCost').value) / 100,
+      onProgress: function (f, k, total) {
+        progress('#xProg', f);
+        status('#xStatus', '월별 재학습 ' + k + '/' + total + '…');
+      }
+    });
+    progress('#xProg', null);
+    $('#runCross').disabled = false;
+    if (!res.months.length) { status('#xStatus', '투자할 수 있는 달이 없습니다. 학습 준비 기간을 줄여 보세요.'); return; }
+    state.cross = { res: res, panel: panel, uni: uni };
+    renderCross();
+    status('#xStatus', '완료. ' + res.months.length + '개월 투자 · ' + uni.tickers.length + '종목 중 상위 ' + $('#xTopN').value + '종목');
+  }
+
+  /* --------------------------------------------------------------------------
+   *  같은 전략을 조건만 바꿔 여러 번 — 한 번의 성적이 운인지 실력인지 가르는 방법
+   *   가상 종목이면 데이터 시드를 바꾸고(다른 세계선을 다시 만들고),
+   *   실제 데이터면 역사가 하나뿐이므로 모델 시드만 바꿉니다.
+   * ------------------------------------------------------------------------*/
+  async function runCrossSeeds() {
+    if (!state.uni) setUniverse(makeUniFromControls());
+    const isDemo = state.uni.meta.synthetic;
+    const seeds = [7, 11, 23, 42, 99];
+    const opt = {
+      modelId: $('#xModel').value,
+      topN: +$('#xTopN').value,
+      warmupMonths: +$('#xWarmup').value,
+      costPerSide: (+$('#xCost').value) / 100
+    };
+    $('#runCrossSeeds').disabled = true;
+    const rows = [], diffs = [], ics = [];
+    for (let k = 0; k < seeds.length; k++) {
+      status('#xStatus', '반복 ' + (k + 1) + '/' + seeds.length + ' 실행 중…');
+      progress('#xProg', k / seeds.length);
+      await U.yield_();
+      let uni = state.uni, panel = state.panel;
+      if (isDemo) {
+        uni = D.makeDemoUniverse({ nStock: +$('#uniN').value, signal: +$('#uniSignal').value, seed: seeds[k] });
+        panel = X.buildPanel(uni);
+      } else if (!panel) {
+        panel = state.panel = X.buildPanel(uni);
+      }
+      // 가상 데이터면 '데이터'만 바꾸고 모델 시드는 42로 고정합니다.
+      // (둘을 한꺼번에 바꾸면 어느 쪽 때문에 결과가 달라졌는지 알 수 없고,
+      //  위의 단일 실행 결과와도 숫자가 맞지 않습니다.)
+      const res = await X.run(panel, uni, Object.assign({ seed: isDemo ? 42 : seeds[k] }, opt));
+      if (!res.months.length) continue;
+      const ps = X.perf(res.strat), pe = X.perf(res.ew);
+      const diff = ps.total - pe.total;
+      const ic = U.mean(res.ic.filter(isFinite));
+      diffs.push(diff); ics.push(ic);
+      rows.push([
+        (isDemo ? '데이터 시드 ' : '모델 시드 ') + seeds[k],
+        U.signPct(ps.total, 1), U.signPct(pe.total, 1),
+        '<span class="' + (diff > 0 ? 'up' : 'down') + '">' + U.signPct(diff, 1) + '</span>',
+        U.fmt(ps.sharpe, 2), U.fmt(ic, 3)
+      ]);
+    }
+    progress('#xProg', null);
+    $('#runCrossSeeds').disabled = false;
+    if (!rows.length) { status('#xStatus', '반복 실행에 실패했습니다. 설정을 확인하세요.'); return; }
+
+    const mean = U.mean(diffs), lo = Math.min.apply(null, diffs), hi = Math.max.apply(null, diffs);
+    const meanIC = U.mean(ics);
+    const summary = ['<strong>평균</strong>', '', '', '<strong>' + U.signPct(mean, 1) + '</strong>', '', '<strong>' + U.fmt(meanIC, 3) + '</strong>'];
+    summary.__cls = 'best';
+    rows.push(summary);
+    const tw = $('#xSeedTable'); tw.innerHTML = '';
+    tw.appendChild(U.table(['조건', '순위 전략', '전체 동일가중', '고르기의 값어치', '샤프', '평균 IC'], rows));
+
+    const wide = (hi - lo) > Math.abs(mean) * 2;
+    const note = U.el('div', 'note ' + (meanIC > 0.02 && mean > 0 ? 'ok' : 'warn'));
+    note.innerHTML = '<strong>이렇게 읽습니다.</strong> 다섯 번의 "고르기의 값어치"는 ' +
+      U.signPct(lo, 1) + ' ~ ' + U.signPct(hi, 1) + ' 사이에 흩어져 있고 평균은 ' + U.signPct(mean, 1) + ', 평균 IC는 ' +
+      U.fmt(meanIC, 3) + '입니다. ' +
+      (wide ? '한 번의 결과가 평균보다 훨씬 크게 흔들립니다. 즉 <strong>한 번 잘 나온 성적은 실력이라고 말할 수 없습니다.</strong> ' : '') +
+      (meanIC > 0.02
+        ? '평균 IC가 0에서 뚜렷이 떨어져 있어 순위를 어느 정도 맞히고는 있습니다.'
+        : '평균 IC가 0 근처라 순위를 맞히는 힘은 거의 없다고 보아야 합니다.') +
+      (state.uni.meta.synthetic && +$('#uniSignal').value === 0
+        ? ' 지금은 신호를 심지 않은 데이터이므로 이 결과(평균 0 근처)가 정상입니다. 도구가 제대로 작동한다는 뜻입니다.'
+        : '');
+    const nb = $('#xSeedNote'); nb.innerHTML = '';
+    nb.appendChild(note);
+    $('#xSeedResult').classList.remove('hidden');
+    status('#xStatus', '반복 실행 완료 (' + rows.length + '회).');
+  }
+
+  function renderCross() {
+    const st = state.cross;
+    const res = st.res, uni = st.uni;
+    $('#xResult').classList.remove('hidden');
+
+    const ps = X.perf(res.strat), pe = X.perf(res.ew);
+    const pb = res.bench && res.bench.length ? X.perf(res.bench) : null;
+    const benchName = pb ? (uni.meta.benchLabel || '지수') : '전체 동일가중';
+    // '종목을 고르는 실력'은 지수가 아니라 '전체를 똑같이 나눠 산 경우'와 비교해야 드러납니다.
+    // 지수를 이기는 것은 종목 선택이 아니라 동일가중이라는 방식 자체 때문일 수 있습니다.
+    const diff = ps.total - pe.total;
+    const meanIC = U.mean(res.ic.filter(isFinite));
+
+    const tiles = [
+      ['순위 전략 (비용 후)', U.signPct(ps.total, 1), '샤프 ' + U.fmt(ps.sharpe, 2)],
+      ['전체 동일가중 (다 사는 경우)', U.signPct(pe.total, 1), '샤프 ' + U.fmt(pe.sharpe, 2)],
+      ['고르기의 값어치', U.signPct(diff, 1), diff > 0 ? '고른 쪽이 앞섬' : '고른 쪽이 뒤짐'],
+      ['평균 정보계수(IC)', U.fmt(meanIC, 3), '0이면 순위를 못 맞힌 것']
+    ];
+    const box = $('#xTiles'); box.innerHTML = '';
+    tiles.forEach(function (t, i) {
+      const el = U.el('div', 'tile');
+      el.appendChild(U.el('div', 'label', t[0]));
+      const v = U.el('div', 'value', t[1]);
+      if (i === 2) v.className += diff > 0 ? ' up' : ' down';
+      el.appendChild(v);
+      el.appendChild(U.el('div', 'sub', t[2]));
+      box.appendChild(el);
+    });
+
+    const series = [
+      { name: '순위 전략 (비용 후)', values: Array.from(ps.cum), color: C.seriesColor(0) },
+      { name: '전체 동일가중', values: Array.from(pe.cum), color: C.seriesColor(1) }
+    ];
+    if (pb) series.push({ name: benchName, values: Array.from(pb.cum), color: C.seriesColor(2), dash: [5, 4] });
+    C.line($('#chartCross'), {
+      labels: res.months, series: series, zeroLine: 1,
+      yFmt: function (v) { return U.fmt(v, 2) + '배'; }
+    });
+    const lg = $('#xLegend'); lg.innerHTML = '';
+    lg.appendChild(C.legend(series.map(function (s) { return { name: s.name, color: s.color }; })));
+
+    const rows = [
+      ['순위 전략 (비용 후)', U.signPct(ps.total, 1), U.signPct(ps.cagr, 1), U.fmt(ps.sharpe, 2), U.pct(ps.mdd, 1), U.pct(U.mean(res.turnover), 0)],
+      ['전체 동일가중', U.signPct(pe.total, 1), U.signPct(pe.cagr, 1), U.fmt(pe.sharpe, 2), U.pct(pe.mdd, 1), '—']
+    ];
+    if (pb) rows.push([benchName, U.signPct(pb.total, 1), U.signPct(pb.cagr, 1), U.fmt(pb.sharpe, 2), U.pct(pb.mdd, 1), '—']);
+    const tw = $('#xTable'); tw.innerHTML = '';
+    tw.appendChild(U.table(['구분', '총수익률', '연평균', '샤프', '최대낙폭', '월평균 교체율'], rows));
+
+    const win = diff > 0;
+    const vsIndex = pb ? (ps.total - pb.total) : NaN;
+    $('#xReading').innerHTML =
+      '<div class="note ' + (win ? 'ok' : 'warn') + '">' +
+      '<strong>가설 H7 — 종목 순위를 맞히는 것이 값어치가 있는가?</strong><br>' +
+      ML.regName($('#xModel').value) + '로 매달 상위 ' + $('#xTopN').value + '종목을 사는 전략의 총수익률은 ' +
+      U.signPct(ps.total, 1) + '입니다 (' + res.months.length + '개월). ' +
+      '같은 기간 <strong>전체 종목을 똑같이 나눠 산 경우</strong>는 ' + U.signPct(pe.total, 1) + '이므로, ' +
+      '고르는 행위가 더해 준 몫은 ' + U.signPct(diff, 1) + '입니다. ' +
+      (win ? '고른 쪽이 앞섰습니다. 다만 평균 IC가 ' + U.fmt(meanIC, 3) +
+             '로 작다면 운이 좋았을 수 있으니 종목 수·기간·시드를 바꿔가며 확인하세요.'
+           : '고른 쪽이 앞서지 못했습니다. H7이 기각되는 방향이며, 그대로 보고하는 것이 정직한 결과입니다.') +
+      (pb ? '<br>참고로 ' + benchName + ' 대비로는 ' + U.signPct(vsIndex, 1) + '입니다. ' +
+            '다만 지수를 이긴 부분에는 <em>종목을 고른 실력</em>이 아니라 <em>모든 종목을 똑같이 나눠 담는 방식</em>의 효과가 섞여 있습니다. ' +
+            '그래서 고르기의 값어치는 위의 동일가중 비교로 판단해야 합니다.' : '') +
+      '</div>' +
+      '<p class="small">평균 정보계수(IC) ' + U.fmt(meanIC, 3) + ' · 월평균 종목 교체율 ' + U.pct(U.mean(res.turnover), 0) +
+      ' · 편도 거래비용 ' + $('#xCost').value + '%</p>' +
+      (uni.meta.synthetic && uni.meta.signal > 0
+        ? '<div class="note warn"><strong>이 성적을 그대로 믿으면 안 됩니다.</strong> 지금 쓰는 가상 종목에는 ' +
+          '"6개월 모멘텀이 높은 종목이 조금 더 오른다"는 신호를 강도 ' + U.fmt(uni.meta.signal, 2) +
+          '로 일부러 심어 두었습니다. 모델이 그 신호를 찾아낸 것이며, 실제 시장에 같은 신호가 있다는 뜻이 아닙니다. ' +
+          '게다가 이 숫자는 시드 하나의 결과라 운이 크게 섞여 있습니다. ' +
+          '"조건을 바꿔 5번 반복"으로 평균을 보고, 강도를 0으로 바꾸면 그 평균이 사라지는지 확인해 보세요.</div>'
+        : '') +
+      '<p class="small"><strong>한계.</strong> 지금 살아남은 종목만 쓰면 상장폐지된 회사가 빠져 성과가 좋게 나옵니다(생존 편향). ' +
+      '월 리밸런싱 비용 가정도 단순합니다. ' + (uni.meta.synthetic ? '게다가 지금 데이터는 가상입니다. ' : '') +
+      '교육·연구용이며 실제 투자 판단에 쓰지 마십시오.</p>';
+
+    // 월별 IC
+    C.line($('#chartIC'), {
+      labels: res.months,
+      series: [{ name: '정보계수(IC)', values: res.ic.map(function (v) { return isFinite(v) ? v : NaN; }), color: C.seriesColor(0) }],
+      zeroLine: 0, yFmt: function (v) { return U.fmt(v, 2); }
+    });
+
+    // 최근에 고른 종목
+    const pw = $('#xPicks'); pw.innerHTML = '';
+    const prows = res.picks.slice(-12).reverse().map(function (p) {
+      return [p.month, p.names.join(', '), U.signPct(p.ret, 2)];
+    });
+    pw.appendChild(U.table(['월', '고른 종목', '그 달 수익률'], prows, { text: true }));
+    U.$$('#xPicks td').forEach(function (td) { td.style.whiteSpace = 'normal'; });
+  }
+
+  /* ==========================================================================
    *  정적 표 (가설 / 용어 / 대응표)
    * ========================================================================*/
   const HYPOTHESES = [
@@ -785,8 +1232,8 @@
     ['H3', "금리 '수준'이 중요해 보이는 건 사실 '시기'를 알려주는 것이다", '시기를 통제해도 금리 수준이 계속 중요하다', '2. 모델 비교 (변수 중요도)'],
     ['H4', '거래비용을 물면 전략이 매수 후 보유를 못 이긴다', '비용을 빼고도 전략이 확실히 낫다', '3. 백테스트'],
     ['H5', '금리 발표일에는 시장이 평소보다 더 출렁인다', '발표일과 평소가 통계적으로 차이 없다', '5. 변동성'],
-    ['H6', '비둘기 발표 뒤 주가가 매파 발표 뒤보다 더 오른다', '두 경우의 차이가 통계적으로 의미 없다', '파이썬 phase2 (NLP 필요)'],
-    ['H7', '종목 순위를 맞히는 것이 지수 방향 맞히기보다 유용하다', '순위 전략이 코스피를 못 이긴다', '파이썬 phase3 (여러 종목 필요)']
+    ['H6', '비둘기 발표 뒤 주가가 매파 발표 뒤보다 더 오른다', '두 경우의 차이가 통계적으로 의미 없다', '6. 이벤트'],
+    ['H7', '종목 순위를 맞히는 것이 지수 방향 맞히기보다 유용하다', '순위 전략이 지수를 못 이긴다', '7. 종목 순위']
   ];
 
   const GLOSSARY = [
@@ -822,15 +1269,20 @@
     ['서프라이즈 (Surprise)', "발표가 시장의 '예상'과 얼마나 달랐는가. 금리 자체보다 '예상 밖'인지가 주가를 더 움직인다."],
     ['생존 편향', '살아남은 것만 보고 판단하는 착각.'],
     ['클래스 가중치', '한쪽 답이 많을 때 적은 쪽에 더 큰 무게를 줘서, 모델이 다수결만 흉내내지 못하게 하는 장치.'],
+    ['횡단면 (Cross-section)', '같은 시점에 여러 종목을 서로 견주는 것. "언제 오를까" 대신 "누가 더 오를까"를 묻는다.'],
+    ['정보계수 (IC)', '예측 순위와 실제 수익률의 상관계수. 0이면 순위를 전혀 못 맞힌 것이고, 실무에서도 0.02~0.05면 쓸 만하다고 본다.'],
+    ['누적 비정상수익률 (CAR)', '사건 전후로 평소보다 얼마나 더(또는 덜) 움직였는지를 날짜별로 더해 나간 값.'],
+    ['동일가중', '모든 종목을 같은 금액으로 나눠 사는 방식. 종목을 고르는 실력을 재려면 이 방식과 비교해야 한다.'],
+    ['교체율 (Turnover)', '포트폴리오의 종목이 한 번에 얼마나 바뀌는지. 높을수록 거래비용이 많이 든다.'],
     ['문턱값 (Threshold)', '확률이 얼마 이상일 때 "상승"이라고 판정할지 정하는 기준. 보통 0.5.']
   ];
 
   const MAPPING = [
-    ['phase1a_model_comparison.py', '2. 모델 비교', '4개 모델 비교, AUC·혼동행렬·변수 중요도, 예측 시계 실험'],
+    ['phase1a_model_comparison.py', '2. 모델 비교', '모델 비교, AUC·혼동행렬·변수 중요도, 예측 시계·시기별 실험'],
     ['phase1b_backtest.py', '3. 백테스트', '워크포워드 재학습 + 거래비용·슬리피지 반영 백테스트'],
     ['phase1c_garch_volatility.py', '5. 변동성', 'GARCH(1,1) 추정, 정책 발표일 전후 변동성 비교(H5)'],
-    ['phase2_event_study.py', '(웹 미지원)', 'FOMC 성명서 NLP가 필요해 파이썬으로 실행하세요'],
-    ['phase3_cross_section.py', '(웹 미지원)', '여러 종목 데이터가 필요해 파이썬으로 실행하세요'],
+    ['phase2_event_study.py', '6. 이벤트 (일부)', '발표일 전후 누적수익률과 집단 비교(H6). 성명서 원문 수집과 RoBERTa 톤 분석은 파이썬 전용 — 톤 점수는 붙여넣어 쓸 수 있음'],
+    ['phase3_cross_section.py', '7. 종목 순위', '월별 순위 예측 포트폴리오와 벤치마크 비교(H7). 거래량 특징은 가격만 있을 때 제외됨'],
     ['—', '4. 모의투자', '웹 전용. 워크포워드 예측을 그대로 써서 직접 매매해 보는 기능']
   ];
 
@@ -882,6 +1334,15 @@
       });
       sel.value = pair[1];
     });
+
+    // 종목 순위용 회귀 모델 선택 상자
+    const xs = $('#xModel');
+    ML.REGRESSORS.forEach(function (m) {
+      const o = U.el('option', '', m.name + (m.kind === 'rule' ? ' (기준선)' : ''));
+      o.value = m.id;
+      xs.appendChild(o);
+    });
+    xs.value = 'boosting';
   }
 
   function bindControls() {
@@ -965,6 +1426,50 @@
 
     $('#runModels').addEventListener('click', function () { runModels(false); });
     $('#runRateAB').addEventListener('click', runRateAB);
+    $('#runHorizon').addEventListener('click', runHorizonSweep);
+    $('#runRegime').addEventListener('click', runRegimeSplit);
+    $('#runEvent').addEventListener('click', runEvent);
+    $('#runCross').addEventListener('click', runCross);
+    $('#runCrossSeeds').addEventListener('click', runCrossSeeds);
+
+    // 이벤트 스터디 — 톤 점수 붙여넣기
+    $('#loadTone').addEventListener('click', function () {
+      try {
+        state.tone = E.parseTone($('#evToneText').value);
+        const n = Object.keys(state.tone).length;
+        $('#evGroup').value = 'tone';
+        status('#evStatus', '톤 점수 ' + n + '개를 적용했습니다. "이벤트 분석 실행"을 누르세요.');
+      } catch (e) {
+        status('#evStatus', '톤 점수를 읽지 못했습니다: ' + e.message);
+      }
+    });
+
+    // 종목 순위 — 데이터 소스 전환
+    $$('#uniChips input').forEach(function (r) {
+      r.addEventListener('change', function () {
+        $$('#uniChips .chip').forEach(function (c) { c.classList.toggle('on', c.querySelector('input').checked); });
+        $('#uniFileBox').classList.toggle('hidden', r.value !== 'file');
+        $('#uniPasteBox').classList.toggle('hidden', r.value !== 'paste');
+        $('#uniDemoBox').classList.toggle('hidden', r.value !== 'demo');
+        if (r.value === 'demo') setUniverse(makeUniFromControls());
+      });
+    });
+    $('#uniSignal').addEventListener('input', function () { $('#uniSignalV').textContent = (+this.value).toFixed(2); });
+    $('#loadUniDemo').addEventListener('click', function () { setUniverse(makeUniFromControls()); });
+    $('#uniFile').addEventListener('change', function () {
+      const f = this.files[0];
+      if (!f) return;
+      const rd = new FileReader();
+      rd.onload = function () {
+        try { setUniverse(D.parseUniverseCSV(rd.result, f.name)); }
+        catch (e) { status('#xStatus', '읽지 못했습니다: ' + e.message); }
+      };
+      rd.readAsText(f, 'utf-8');
+    });
+    $('#loadUniPaste').addEventListener('click', function () {
+      try { setUniverse(D.parseUniverseCSV($('#uniText').value, '붙여넣은 종목 데이터')); }
+      catch (e) { status('#xStatus', '읽지 못했습니다: ' + e.message); }
+    });
     $('#runBacktest').addEventListener('click', runBacktest);
     $('#startSim').addEventListener('click', startSim);
     $('#runVol').addEventListener('click', runVol);

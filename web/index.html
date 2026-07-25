@@ -26,6 +26,8 @@
     <button data-tab="backtest">3. 백테스트</button>
     <button data-tab="sim">4. 모의투자</button>
     <button data-tab="vol">5. 변동성</button>
+    <button data-tab="event">6. 이벤트</button>
+    <button data-tab="cross">7. 종목 순위</button>
     <button data-tab="glossary">용어</button>
   </nav>
 </header>
@@ -39,6 +41,8 @@
     <p class="card-sub">데이터를 넣고, 모델을 학습시키고, 거래비용까지 물려서 직접 확인해 보세요.</p>
     <p>이 사이트는 <code>phase1a~phase3</code> 파이썬 연구 코드를 브라우저에서 그대로 돌려 볼 수 있게 옮긴 것입니다.
       설치할 것도, API 키도 없이 바로 시작할 수 있고, 원하면 실제 시장 데이터를 넣어 다시 확인할 수 있습니다.</p>
+    <p class="small">아래 네 단계가 기본 흐름이고, 이어서 <strong>5. 변동성</strong>(GARCH), <strong>6. 이벤트</strong>(FOMC 전후 반응),
+      <strong>7. 종목 순위</strong>(여러 종목 중 오를 종목 고르기)까지 확인할 수 있습니다.</p>
     <div class="sim-actions">
       <button class="btn big" id="quickRun">지금 바로 실행해 보기</button>
       <button class="btn ghost big" data-goto="data">데이터부터 고르기</button>
@@ -199,6 +203,8 @@
     <div class="controls" style="margin-top:14px">
       <button class="btn" id="runModels">학습하고 비교하기</button>
       <button class="btn ghost" id="runRateAB">금리 넣은 것과 뺀 것 비교 (H2)</button>
+      <button class="btn ghost" id="runHorizon">예측 시계별로 비교 (1·5·20·60일)</button>
+      <button class="btn ghost" id="runRegime">시기별로 나눠 보기 (H3)</button>
     </div>
     <div class="status" id="modelStatus"></div>
     <div class="progress" id="modelProg"><div></div></div>
@@ -246,6 +252,24 @@
       <h3>금리 특징의 효과 (가설 H2)</h3>
       <p class="small">같은 모델·같은 구간에서 금리 변수만 넣고 뺐을 때의 차이입니다. 차이가 거의 없다면 효율적 시장 가설과 어울리는 결과입니다.</p>
       <div class="tbl-wrap" id="abTable"></div>
+    </div>
+  </div>
+
+  <div id="horizonResult" class="hidden">
+    <div class="card">
+      <h3>예측 시계를 바꾸면 (1일 · 5일 · 20일 · 60일)</h3>
+      <p class="small">먼 미래일수록 정확도가 높아 보일 수 있지만 기준선도 같이 오릅니다. 그래서 <em>정확도−기준선</em>과 AUC로 판단합니다.</p>
+      <div class="tbl-wrap" id="horizonTable"></div>
+      <div class="chart-title" style="margin-top:14px">예측 시계별 AUC</div>
+      <canvas class="chart" id="chartHorizon"></canvas>
+    </div>
+  </div>
+
+  <div id="regimeResult" class="hidden">
+    <div class="card">
+      <h3>시기별로 나눠 보기 (가설 H3)</h3>
+      <p class="small">금리 환경이 다른 시기로 시험 구간을 잘라 성적을 따로 봅니다. 한 시기에서만 잘 맞는다면 그 모델은 '시기를 외운' 것일 수 있습니다.</p>
+      <div class="tbl-wrap" id="regimeTable"></div>
     </div>
   </div>
 </section>
@@ -407,6 +431,149 @@
   </div>
 </section>
 
+<!-- ======================= 이벤트 스터디 ======================= -->
+<section class="panel" id="panel-event">
+  <div class="card">
+    <h2>이벤트 스터디 <span class="tiny">— Phase 2</span></h2>
+    <p class="card-sub">FOMC는 1년에 여덟 번뿐입니다. 표본이 적을 때 쓰는 정석적 방법으로 발표일 전후 주가를 봅니다.</p>
+    <div class="controls">
+      <div class="field"><label for="evBefore">발표일 전 (거래일)</label>
+        <select id="evBefore"><option value="5" selected>5일</option><option value="10">10일</option><option value="20">20일</option></select></div>
+      <div class="field"><label for="evAfter">발표일 후 (거래일)</label>
+        <select id="evAfter"><option value="5">5일</option><option value="10" selected>10일</option><option value="20">20일</option></select></div>
+      <div class="field"><label for="evGroup">집단을 나누는 기준</label>
+        <select id="evGroup">
+          <option value="rate" selected>발표일 금리 변화 (서프라이즈 대용치)</option>
+          <option value="tone">붙여넣은 톤 점수 (파이썬 phase2 결과)</option>
+        </select></div>
+      <button class="btn" id="runEvent">이벤트 분석 실행</button>
+    </div>
+    <div class="status" id="evStatus"></div>
+    <details style="margin-top:10px">
+      <summary class="small">톤 점수 붙여넣기 (선택) — 파이썬 phase2가 만든 값을 여기에 넣으면 매파/비둘기로 나눠 볼 수 있습니다</summary>
+      <p class="small" style="margin-top:8px">한 줄에 <code>날짜,톤</code> 형식으로 넣습니다. 예: <code>2015-01-28,0.12</code> (+면 매파, −면 비둘기)</p>
+      <textarea id="evToneText" placeholder="2015-01-28,0.12&#10;2015-03-18,-0.05&#10;..."></textarea>
+      <div class="controls" style="margin-top:8px"><button class="btn ghost sm" id="loadTone">톤 점수 적용</button></div>
+    </details>
+    <div class="note">브라우저에서는 연준 사이트의 성명서 원문을 받아 오거나 대형 언어모델(FOMC-RoBERTa)을 돌릴 수 없습니다.
+      그래서 톤은 파이썬 <code>phase2_event_study.py</code>가 만든 값을 붙여넣어 쓰고, 없으면 발표일의 금리 변화를
+      서프라이즈 대용치로 씁니다. 텍스트나 점수를 지어내지 않습니다.</div>
+  </div>
+
+  <div id="evResult" class="hidden">
+    <div class="grid c4 keep2" id="evTiles"></div>
+    <div class="card">
+      <div class="chart-title">발표일 전후 평균 누적수익률</div>
+      <div class="chart-note">가로축 0이 발표 이후 첫 거래일입니다. 표본 전체 평균 수익률을 뺀 '초과분'의 누적입니다.</div>
+      <div id="evCarLegend"></div>
+      <canvas class="chart lg" id="chartCar"></canvas>
+    </div>
+    <div class="card">
+      <h3>집단별 반응 비교 (가설 H6)</h3>
+      <div class="tbl-wrap" id="evTable"></div>
+      <div id="evTest"></div>
+    </div>
+    <div class="card">
+      <div class="chart-title" id="evScatterTitle">기준값 vs 익일 수익률</div>
+      <div class="chart-note">점선은 최소제곱 추세선입니다. 기울기가 뚜렷하지 않으면 관계가 약하다는 뜻입니다.</div>
+      <canvas class="chart" id="chartEvScatter"></canvas>
+      <div id="evCorr"></div>
+    </div>
+    <div class="card">
+      <h3>해석 기준 — Bernanke &amp; Kuttner (2005)</h3>
+      <p class="small">'예상치 못한' 25bp 인하가 주가지수를 약 1% 올린다고 보고했습니다. 핵심은 금리 <strong>수준</strong>이 아니라
+        <strong>서프라이즈</strong>(예상 대비 놀람)입니다. 여기서 쓰는 2년물 금리 변화는 서프라이즈의 대용치일 뿐이며,
+        정확한 서프라이즈는 연방기금 선물이 필요합니다.</p>
+      <div class="tbl-wrap" id="evList"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ======================= 종목 순위 ======================= -->
+<section class="panel" id="panel-cross">
+  <div class="card">
+    <h2>종목 순위 예측 <span class="tiny">— Phase 3</span></h2>
+    <p class="card-sub">실무는 지수 방향을 맞히지 않고, 여러 종목 중 더 오를 종목의 <strong>순위</strong>를 맞혀 상위를 삽니다.</p>
+    <div class="chips" id="uniChips">
+      <label class="chip on"><input type="radio" name="uni" value="demo" checked>데모(가상) 종목 24개</label>
+      <label class="chip"><input type="radio" name="uni" value="file">CSV 파일 올리기</label>
+      <label class="chip"><input type="radio" name="uni" value="paste">CSV 붙여넣기</label>
+    </div>
+    <div id="uniDemoBox" style="margin-top:12px">
+      <div class="controls">
+        <div class="field"><label for="uniN">종목 수</label>
+          <select id="uniN"><option value="12">12개</option><option value="24" selected>24개</option><option value="40">40개</option></select></div>
+        <div class="field"><label for="uniSignal">숨은 모멘텀 신호 강도 <span id="uniSignalV" class="tiny">0.02</span></label>
+          <input type="range" id="uniSignal" min="0" max="0.15" step="0.01" value="0.02"></div>
+        <div class="field"><label for="uniSeed">난수 시드</label><input type="number" id="uniSeed" value="7" min="1" step="1"></div>
+        <button class="btn ghost" id="loadUniDemo">가상 종목 다시 만들기</button>
+      </div>
+      <div class="note">이 가상 종목들에는 "6개월 모멘텀이 높은 종목이 조금 더 오른다"는 신호를 <strong>일부러 심어</strong> 두었습니다.
+        강도를 <strong>0</strong>으로 두면 평균적으로 순위 예측이 통하지 않아야 정상입니다.
+        다만 <em>한 번</em>은 우연히 잘 나올 수 있으니, 시드를 바꿔 여러 번 돌려 평균으로 판단하세요
+        (아래 "조건을 바꿔 5번 반복" 버튼). 실제 시장에 이만한 신호가 있다는 뜻은 아닙니다.</div>
+    </div>
+    <div id="uniFileBox" class="hidden" style="margin-top:12px">
+      <div class="controls"><div class="field"><label for="uniFile">종목 CSV</label><input type="file" id="uniFile" accept=".csv,.txt,.tsv"></div></div>
+    </div>
+    <div id="uniPasteBox" class="hidden" style="margin-top:12px">
+      <textarea id="uniText" placeholder="Date,삼성전자,SK하이닉스,NAVER&#10;2015-01-02,26000,47000,72000&#10;...&#10;&#10;또는  Date,Ticker,Close  세 열 형식"></textarea>
+      <div class="controls" style="margin-top:8px"><button class="btn ghost sm" id="loadUniPaste">붙여넣은 종목 데이터 적용</button></div>
+    </div>
+    <p class="small" style="margin-top:10px">넓은 형식(<code>날짜 + 종목별 종가 열</code>) 또는 좁은 형식(<code>Date, Ticker, Close</code>) 둘 다 됩니다. 최소 5종목이 필요합니다.</p>
+
+    <div class="controls" style="margin-top:8px">
+      <div class="field"><label for="xModel">모델</label><select id="xModel"></select></div>
+      <div class="field"><label for="xTopN">매달 사는 종목 수</label>
+        <select id="xTopN"><option value="3">3종목</option><option value="5" selected>5종목</option><option value="10">10종목</option></select></div>
+      <div class="field"><label for="xWarmup">학습 준비 기간</label>
+        <select id="xWarmup"><option value="24">24개월</option><option value="36" selected>36개월</option><option value="48">48개월</option></select></div>
+      <div class="field"><label for="xCost">편도 거래비용(%)</label><input type="number" id="xCost" value="0.05" step="0.01" min="0"></div>
+      <button class="btn" id="runCross">순위 전략 실행</button>
+      <button class="btn ghost" id="runCrossSeeds">조건을 바꿔 5번 반복</button>
+    </div>
+    <div class="status" id="xStatus"></div>
+    <div class="progress" id="xProg"><div></div></div>
+    <div class="note warn"><strong>생존 편향에 주의하세요.</strong> 지금 살아남은 종목만 넣으면 그동안 상장폐지된 회사가 표본에서 빠져
+      성과가 실제보다 좋게 나옵니다. 발표할 때 이 한계를 반드시 함께 밝혀야 합니다.</div>
+  </div>
+
+  <div id="xSeedResult" class="hidden">
+    <div class="card">
+      <h3>같은 전략을 조건만 바꿔 5번 돌리면</h3>
+      <p class="small">한 번 잘 나온 결과가 실력인지 운인지 가리는 가장 쉬운 방법입니다. 결과가 들쭉날쭉하면 한 번의 성적은 믿을 게 못 됩니다.</p>
+      <div class="tbl-wrap" id="xSeedTable"></div>
+      <div id="xSeedNote"></div>
+    </div>
+  </div>
+
+  <div id="xResult" class="hidden">
+    <div class="grid c4 keep2" id="xTiles"></div>
+    <div class="card">
+      <div class="chart-title">누적 자산 (시작 = 1)</div>
+      <div class="chart-note">상위 종목 전략과 비교 대상(전체 동일가중, 지수)을 나란히 봅니다.</div>
+      <div id="xLegend"></div>
+      <canvas class="chart lg" id="chartCross"></canvas>
+    </div>
+    <div class="card">
+      <h3>성과 비교</h3>
+      <div class="tbl-wrap" id="xTable"></div>
+      <div id="xReading"></div>
+    </div>
+    <div class="grid c2">
+      <div class="card">
+        <div class="chart-title">월별 정보계수(IC)</div>
+        <div class="chart-note">그 달 예측 순위와 실제 수익률의 상관계수. 0이면 순위를 전혀 맞히지 못한 것입니다.</div>
+        <canvas class="chart" id="chartIC"></canvas>
+      </div>
+      <div class="card">
+        <h3>최근에 고른 종목</h3>
+        <div class="tbl-wrap trade-log" id="xPicks"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
 <!-- ======================= 용어 ======================= -->
 <section class="panel" id="panel-glossary">
   <div class="card">
@@ -440,6 +607,8 @@
 <script src="js/charts.js"></script>
 <script src="js/backtest.js"></script>
 <script src="js/sim.js"></script>
+<script src="js/events.js"></script>
+<script src="js/cross.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

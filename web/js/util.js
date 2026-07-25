@@ -109,6 +109,22 @@
     return { t: t, p: isFinite(t) ? U.twoSidedP(t) : NaN, ma: ma, mb: mb, na: na, nb: nb };
   };
 
+  // 피어슨 상관계수와 그 p값(정규근사). 두 값이 함께 움직이는 정도.
+  U.pearson = function (a, b) {
+    const n = Math.min(a.length, b.length);
+    if (n < 4) return { r: NaN, p: NaN, n: n };
+    const ma = U.mean(a), mb = U.mean(b);
+    let sab = 0, saa = 0, sbb = 0;
+    for (let i = 0; i < n; i++) {
+      const da = a[i] - ma, db = b[i] - mb;
+      sab += da * db; saa += da * da; sbb += db * db;
+    }
+    const r = (saa > 0 && sbb > 0) ? sab / Math.sqrt(saa * sbb) : NaN;
+    if (!isFinite(r) || Math.abs(r) >= 1) return { r: r, p: 0, n: n };
+    const t = r * Math.sqrt((n - 2) / (1 - r * r));
+    return { r: r, p: U.twoSidedP(t), n: n };
+  };
+
   // 이항검정(정규근사): 정확도가 기준선보다 유의하게 높은가
   U.binomP = function (successes, n, p0) {
     if (!n || !isFinite(p0)) return NaN;

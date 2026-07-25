@@ -406,6 +406,75 @@
     C.observe(canvas);
   };
 
+  /* ==========================================================================
+   *  산점도 — 두 값의 관계를 볼 때 (예: 성명서 톤 vs 익일 수익률)
+   *  points = [{x, y, label}]
+   * ========================================================================*/
+  C.scatter = function (canvas, opt) {
+    const draw = function () {
+      const s = setup(canvas), ctx = s.ctx, th = theme();
+      const pts = opt.points || [];
+      if (!pts.length) return;
+      const padL = 56, padR = 16, padT = 12, padB = 34;
+      const W = s.w - padL - padR, H = s.h - padT - padB;
+      let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+      pts.forEach(function (p) {
+        if (p.x < x0) x0 = p.x; if (p.x > x1) x1 = p.x;
+        if (p.y < y0) y0 = p.y; if (p.y > y1) y1 = p.y;
+      });
+      const px = (x1 - x0) * 0.08 || 0.01, py = (y1 - y0) * 0.08 || 0.01;
+      x0 -= px; x1 += px; y0 -= py; y1 += py;
+      const X = function (v) { return padL + ((v - x0) / (x1 - x0)) * W; };
+      const Y = function (v) { return padT + H - ((v - y0) / (y1 - y0)) * H; };
+
+      ctx.strokeStyle = th.grid; ctx.lineWidth = 1; ctx.fillStyle = th.muted;
+      ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+      niceTicks(y0, y1, 5).forEach(function (t) {
+        const y = Math.round(Y(t)) + 0.5;
+        if (y < padT || y > padT + H) return;
+        ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(padL + W, y); ctx.stroke();
+        ctx.fillText(opt.yFmt ? opt.yFmt(t) : U.fmt(t, 2), padL - 8, y);
+      });
+      ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+      niceTicks(x0, x1, 5).forEach(function (t) {
+        const x = X(t);
+        if (x < padL || x > padL + W) return;
+        ctx.fillText(opt.xFmt ? opt.xFmt(t) : U.fmt(t, 2), x, padT + H + 8);
+      });
+
+      // 0 기준선 (있을 때만)
+      ctx.strokeStyle = th.axis;
+      if (0 > y0 && 0 < y1) { const y = Math.round(Y(0)) + 0.5; ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(padL + W, y); ctx.stroke(); }
+      if (0 > x0 && 0 < x1) { const x = Math.round(X(0)) + 0.5; ctx.beginPath(); ctx.moveTo(x, padT); ctx.lineTo(x, padT + H); ctx.stroke(); }
+
+      // 추세선 (최소제곱)
+      if (opt.trend !== false && pts.length > 3) {
+        let sx = 0, sy = 0, sxy = 0, sxx = 0;
+        pts.forEach(function (p) { sx += p.x; sy += p.y; sxy += p.x * p.y; sxx += p.x * p.x; });
+        const nP = pts.length;
+        const den = nP * sxx - sx * sx;
+        if (Math.abs(den) > 1e-12) {
+          const b = (nP * sxy - sx * sy) / den, a = (sy - b * sx) / nP;
+          ctx.save();
+          ctx.strokeStyle = th.muted; ctx.lineWidth = 1.5; ctx.setLineDash([5, 4]);
+          ctx.beginPath(); ctx.moveTo(X(x0), Y(a + b * x0)); ctx.lineTo(X(x1), Y(a + b * x1)); ctx.stroke();
+          ctx.restore();
+        }
+      }
+
+      pts.forEach(function (p) {
+        ctx.beginPath();
+        ctx.arc(X(p.x), Y(p.y), 4.5, 0, Math.PI * 2);
+        ctx.fillStyle = p.color || C.seriesColor(0);
+        ctx.fill();
+        ctx.lineWidth = 2; ctx.strokeStyle = th.surface; ctx.stroke();
+      });
+    };
+    draw();
+    canvas.__redraw = draw;
+    C.observe(canvas);
+  };
+
   /* --------------------------------------------------------------------------
    *  창 크기가 바뀌면 다시 그리기
    * ------------------------------------------------------------------------*/

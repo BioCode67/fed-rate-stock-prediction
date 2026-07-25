@@ -478,6 +478,118 @@
   };
   RuleModel.prototype.importance = function () { return null; };
 
+  /* ========================================================================
+   *  회귀 모델 — Phase 3(종목 순위 예측)에서 '다음 달 수익률'을 맞히는 데 씁니다.
+   *  분류가 아니라 숫자를 예측하므로 손실이 다릅니다(제곱오차).
+   *  나무를 만드는 코드는 위의 fitGradTree를 그대로 씁니다.
+   *    g = 예측 - 실제, h = 1  →  잎의 값이 그 구간의 평균이 되고,
+   *    분할 이득은 분산 감소량과 같아집니다.
+   * ======================================================================*/
+  function ForestReg(opt) {
+    this.opt = Object.assign({ trees: 40, maxDepth: 6, minLeaf: 20, seed: 42, sampleRate: 0.8 }, opt);
+  }
+  ForestReg.prototype.fit = function (X, y) {
+    const o = this.opt, n = X.length, p = X[0].length;
+    const rnd = U.rng(o.seed);
+    this.th = makeBins(X);
+    const B = binize(X, this.th);
+    const g = new Float64Array(n), h = new Float64Array(n);
+    for (let i = 0; i < n; i++) { g[i] = -y[i]; h[i] = 1; }
+    this.gain = new Float64Array(p);
+    this.trees = [];
+    const m = Math.max(50, Math.round(n * o.sampleRate));
+    const colRate = Math.max(1 / p, Math.sqrt(p) / p);
+    for (let t = 0; t < o.trees; t++) {
+      const ids = new Array(m);
+      for (let k = 0; k < m; k++) ids[k] = rnd.int(n);
+      this.trees.push(fitGradTree(B, p, g, h, ids, o.maxDepth, o.minLeaf, 1e-6, colRate, rnd, this.gain));
+    }
+    this.p = p;
+    return this;
+  };
+  ForestReg.prototype.predict = function (X) {
+    const B = binize(X, this.th), out = new Float64Array(X.length);
+    for (let i = 0; i < X.length; i++) {
+      let s = 0;
+      for (let t = 0; t < this.trees.length; t++) s += treePredict(this.trees[t], B, this.p, i);
+      out[i] = s / this.trees.length;
+    }
+    return out;
+  };
+  ForestReg.prototype.importance = Forest.prototype.importance;
+
+  function BoostingReg(opt) {
+    this.opt = Object.assign({ trees: 80, lr: 0.06, maxDepth: 3, minLeaf: 20, lambda: 1.0, colRate: 0.9, subsample: 0.9, seed: 42 }, opt);
+  }
+  BoostingReg.prototype.fit = function (X, y) {
+    const o = this.opt, n = X.length, p = X[0].length;
+    const rnd = U.rng(o.seed);
+    this.th = makeBins(X);
+    const B = binize(X, this.th);
+    let base = 0;
+    for (let i = 0; i < n; i++) base += y[i];
+    base /= n;
+    const F = new Float64Array(n); F.fill(base);
+    const g = new Float64Array(n), h = new Float64Array(n);
+    this.gain = new Float64Array(p);
+    this.trees = [];
+    for (let t = 0; t < o.trees; t++) {
+      for (let i = 0; i < n; i++) { g[i] = F[i] - y[i]; h[i] = 1; }
+      const ids = [];
+      for (let i = 0; i < n; i++) if (rnd() < o.subsample) ids.push(i);
+      if (ids.length < 40) for (let i = 0; i < n; i++) ids.push(i);
+      const tree = fitGradTree(B, p, g, h, ids, o.maxDepth, o.minLeaf, o.lambda, o.colRate, rnd, this.gain);
+      for (let i = 0; i < n; i++) F[i] += o.lr * treePredict(tree, B, p, i);
+      this.trees.push(tree);
+    }
+    this.base = base; this.p = p;
+    return this;
+  };
+  BoostingReg.prototype.predict = function (X) {
+    const B = binize(X, this.th), out = new Float64Array(X.length);
+    for (let i = 0; i < X.length; i++) {
+      let f = this.base;
+      for (let t = 0; t < this.trees.length; t++) f += this.opt.lr * treePredict(this.trees[t], B, this.p, i);
+      out[i] = f;
+    }
+    return out;
+  };
+  BoostingReg.prototype.importance = Forest.prototype.importance;
+
+  // 규칙 기반 순위: 특정 특징값을 그대로 점수로 씁니다 (예: 6개월 모멘텀이 높은 순).
+  function RuleReg(opt) { this.opt = opt || {}; }
+  RuleReg.prototype.fit = function () { return this; };
+  RuleReg.prototype.predict = function (X) {
+    const j = this.opt.index === undefined ? 0 : this.opt.index;
+    const out = new Float64Array(X.length);
+    const rnd = U.rng(this.opt.seed || 42);
+    for (let i = 0; i < X.length; i++) out[i] = this.opt.random ? rnd() : X[i][j];
+    return out;
+  };
+  RuleReg.prototype.importance = function () { return null; };
+
+  ML.REGRESSORS = [
+    { id: 'boosting', name: '그래디언트부스팅', kind: 'ai' },
+    { id: 'forest', name: '랜덤포레스트', kind: 'ai' },
+    { id: 'momentum', name: '6개월 모멘텀 규칙', kind: 'rule' },
+    { id: 'random', name: '무작위 선택', kind: 'rule' }
+  ];
+  ML.createReg = function (id, opt) {
+    opt = opt || {};
+    const fc = opt.featureCols || [];
+    switch (id) {
+      case 'boosting': return new BoostingReg(opt);
+      case 'forest': return new ForestReg(opt);
+      case 'momentum': return new RuleReg({ index: Math.max(0, fc.indexOf('mom_6m')) });
+      case 'random': return new RuleReg({ random: true, seed: opt.seed || 42 });
+      default: throw new Error('알 수 없는 회귀 모델: ' + id);
+    }
+  };
+  ML.regName = function (id) {
+    for (let i = 0; i < ML.REGRESSORS.length; i++) if (ML.REGRESSORS[i].id === id) return ML.REGRESSORS[i].name;
+    return id;
+  };
+
   /* ------------------------------------------------------------------------
    *  모델 만들기
    *  featureCols는 모멘텀 규칙이 어느 열을 봐야 하는지 알려주는 데 씁니다.

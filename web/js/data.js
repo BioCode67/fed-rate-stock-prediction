@@ -126,6 +126,155 @@
   };
 
   /* ==========================================================================
+   *  [1-2] 데모용 가상 '여러 종목' 데이터 — Phase 3(종목 순위)용
+   * ------------------------------------------------------------------------
+   *  구성: 시장 전체가 함께 움직이는 부분(시장 요인) + 종목마다 다른 부분(고유 변동)
+   *       + (선택) 아주 약한 모멘텀 신호. 실제 종목이 아니라 가상의 A~T사입니다.
+   * ========================================================================*/
+  D.makeDemoUniverse = function (opts) {
+    opts = opts || {};
+    const nStock = opts.nStock || 24;
+    const n = opts.n || 2600;                       // 약 10년치 거래일
+    const signal = (opts.signal === undefined ? 0.05 : opts.signal);
+    const rnd = U.rng(opts.seed || 7);
+
+    const dates = [];
+    let cur = new Date(Date.UTC(2015, 0, 2));
+    for (let i = 0; i < n; i++) {
+      while (cur.getUTCDay() === 0 || cur.getUTCDay() === 6) cur.setUTCDate(cur.getUTCDate() + 1);
+      dates.push(new Date(cur.getTime()));
+      cur.setUTCDate(cur.getUTCDate() + 1);
+    }
+
+    const names = [];
+    for (let s = 0; s < nStock; s++) {
+      names.push('가상' + String.fromCharCode(65 + (s % 26)) + (s >= 26 ? Math.floor(s / 26) : '') + '사');
+    }
+    const MKT_DRIFT = 0.00035;                      // 시장 요인의 하루 평균 상승
+    const beta = [], idioVol = [], drift = [];
+    for (let s = 0; s < nStock; s++) {
+      beta.push(0.6 + rnd() * 0.9);                 // 시장 민감도 0.6~1.5
+      idioVol.push(0.010 + rnd() * 0.012);          // 고유 변동성
+      // 종목별 추세는 베타의 영향을 상쇄해서 넣습니다.
+      // 이렇게 하지 않으면 '베타가 높은 종목이 원래 더 오른다'는 관계가 생겨,
+      // 숨은 신호를 0으로 둬도 변동성만 보고 순위를 맞힐 수 있게 됩니다.
+      // 그러면 "신호 0 = 예측 불가"라는 점검이 성립하지 않습니다.
+      drift.push(MKT_DRIFT + (rnd() - 0.5) * 0.00012 - beta[s] * MKT_DRIFT);
+    }
+
+    const close = {}, px = new Float64Array(nStock);
+    names.forEach(function (t) { close[t] = new Float64Array(n); });
+    for (let s = 0; s < nStock; s++) px[s] = 10000 + rnd() * 40000;
+
+    const bench = new Float64Array(n);
+    let mkt = 1000, mktVol = 0.0105, prevShock = 0;
+
+    for (let i = 0; i < n; i++) {
+      mktVol = Math.sqrt(2.2e-6 + 0.08 * prevShock * prevShock + 0.90 * mktVol * mktVol);
+      const mShock = rnd.normal() * mktVol;
+      prevShock = mShock;
+      const mRet = MKT_DRIFT + mShock;
+      mkt *= (1 + mRet);
+      bench[i] = mkt;
+
+      for (let s = 0; s < nStock; s++) {
+        let hidden = 0;
+        if (signal > 0 && i > 130) {
+          // 6개월 모멘텀이 높은 종목이 아주 조금 더 오르는 구조 (찾아낼 수 있는지 확인용)
+          const arr = close[names[s]];
+          const mom6 = arr[i - 1] / arr[i - 126] - 1;
+          hidden = signal * Math.tanh(mom6 * 2) * idioVol[s] * 0.6;
+        }
+        const ret = drift[s] + beta[s] * mRet + hidden + rnd.normal() * idioVol[s];
+        px[s] *= (1 + ret);
+        close[names[s]][i] = px[s];
+      }
+    }
+
+    return {
+      dates: dates, tickers: names, close: close, bench: bench,
+      meta: {
+        name: '데모(가상) 종목 ' + nStock + '개', synthetic: true,
+        benchLabel: '가상 시장지수',
+        signal: signal,
+        note: '실제 종목이 아닙니다. 시드를 고정해 만든 가상의 주가입니다.'
+      }
+    };
+  };
+
+  /* --------------------------------------------------------------------------
+   *  여러 종목 CSV 읽기
+   *  (1) 넓은 형식: 첫 열이 날짜, 나머지 열이 종목별 종가
+   *  (2) 좁은 형식: Date, Ticker, Close 세 열
+   * ------------------------------------------------------------------------*/
+  D.parseUniverseCSV = function (text, name) {
+    const lines = String(text).replace(/\r/g, '').split('\n').filter(function (l) { return l.trim().length; });
+    if (lines.length < 30) throw new Error('줄이 너무 적습니다(' + lines.length + '줄).');
+    const split = function (l) { return l.split(/[,\t;]/).map(function (s) { return s.trim().replace(/^"|"$/g, ''); }); };
+    const head = split(lines[0]);
+    const lower = head.map(function (h) { return h.toLowerCase().replace(/\s+/g, ''); });
+    const num = function (s) { const v = parseFloat(String(s).replace(/[",$₩\s]/g, '')); return isFinite(v) ? v : NaN; };
+
+    const iTicker = lower.indexOf('ticker') >= 0 ? lower.indexOf('ticker')
+      : (lower.indexOf('종목') >= 0 ? lower.indexOf('종목') : (lower.indexOf('symbol') >= 0 ? lower.indexOf('symbol') : -1));
+    const rows = {};      // ticker -> {dateStr: close}
+    const dateSet = {};
+
+    if (iTicker >= 0) {                                  // 좁은 형식
+      const iDate = 0;
+      let iClose = lower.indexOf('close');
+      if (iClose < 0) iClose = lower.indexOf('종가');
+      if (iClose < 0) throw new Error("종가(Close) 열을 찾지 못했습니다.");
+      for (let k = 1; k < lines.length; k++) {
+        const c = split(lines[k]);
+        const d = U.parseDate(c[iDate]); const v = num(c[iClose]);
+        if (!d || !isFinite(v) || v <= 0) continue;
+        const t = c[iTicker];
+        (rows[t] = rows[t] || {})[U.dstr(d)] = v;
+        dateSet[U.dstr(d)] = 1;
+      }
+    } else {                                             // 넓은 형식
+      for (let j = 1; j < head.length; j++) rows[head[j]] = {};
+      for (let k = 1; k < lines.length; k++) {
+        const c = split(lines[k]);
+        const d = U.parseDate(c[0]);
+        if (!d) continue;
+        const key = U.dstr(d);
+        let any = false;
+        for (let j = 1; j < head.length; j++) {
+          const v = num(c[j]);
+          if (isFinite(v) && v > 0) { rows[head[j]][key] = v; any = true; }
+        }
+        if (any) dateSet[key] = 1;
+      }
+    }
+
+    const dateKeys = Object.keys(dateSet).sort();
+    if (dateKeys.length < 30) throw new Error('날짜가 너무 적습니다(' + dateKeys.length + '개).');
+    const tickers = Object.keys(rows).filter(function (t) {
+      return Object.keys(rows[t]).length > dateKeys.length * 0.6;   // 결측이 많은 종목 제외
+    });
+    if (tickers.length < 5) throw new Error('쓸 수 있는 종목이 ' + tickers.length + '개뿐입니다. 최소 5종목이 필요합니다.');
+
+    const close = {};
+    tickers.forEach(function (t) {
+      const arr = new Float64Array(dateKeys.length);
+      let last = NaN;
+      for (let i = 0; i < dateKeys.length; i++) {
+        const v = rows[t][dateKeys[i]];
+        if (v !== undefined) last = v;
+        arr[i] = last;                                   // 휴장일은 직전 값 유지
+      }
+      close[t] = arr;
+    });
+    return {
+      dates: dateKeys.map(function (k) { return U.parseDate(k); }),
+      tickers: tickers, close: close, bench: null,
+      meta: { name: name || '내 종목 데이터', synthetic: false, benchLabel: '', note: '' }
+    };
+  };
+
+  /* ==========================================================================
    *  [2] CSV 읽기
    *  허용 열 이름: 날짜 = Date/date/날짜/일자,  종가 = Close/Adj Close/종가/현재가
    *               금리 = Rate/rate/금리/DGS2  (없으면 금리 없이 진행)
