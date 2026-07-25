@@ -1,0 +1,3814 @@
+<!DOCTYPE html>
+<html lang="ko" data-theme="">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>금리와 주가, 그리고 머신러닝 — 주가 예측·모의투자 실험실</title>
+<meta name="description" content="금리 기대와 주가 방향 예측을 여러 모델로 비교하고, 거래비용을 물린 백테스트와 모의투자까지 브라우저에서 바로 확인하는 교육용 도구.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>📈</text></svg>">
+<style>
+/* ============================================================================
+ *  styles.css — 금리와 주가, 그리고 머신러닝 (웹 버전)
+ *  밝은 화면 / 어두운 화면 모두 지원합니다.
+ * ==========================================================================*/
+
+:root {
+  color-scheme: light;
+  --surface-1: #fcfcfb;
+  --surface-2: #f4f4f1;
+  --page: #f9f9f7;
+  --text-primary: #0b0b0b;
+  --text-secondary: #52514e;
+  --text-muted: #898781;
+  --gridline: #e1e0d9;
+  --axisline: #c3c2b7;
+  --border: rgba(11, 11, 11, 0.10);
+  --border-strong: rgba(11, 11, 11, 0.18);
+
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --series-3: #1baf7a;
+  --series-4: #eda100;
+  --series-5: #e87ba4;
+  --series-6: #008300;
+  --series-7: #4a3aa7;
+  --series-8: #e34948;
+
+  --good: #0ca30c;
+  --warning: #fab219;
+  --serious: #ec835a;
+  --critical: #d03b3b;
+  --good-text: #006300;
+  --critical-text: #b02c2c;
+
+  --radius: 10px;
+  --shadow: 0 1px 2px rgba(11, 11, 11, .05), 0 4px 14px rgba(11, 11, 11, .05);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --surface-1: #1a1a19;
+    --surface-2: #232322;
+    --page: #0d0d0d;
+    --text-primary: #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted: #898781;
+    --gridline: #2c2c2a;
+    --axisline: #383835;
+    --border: rgba(255, 255, 255, 0.10);
+    --border-strong: rgba(255, 255, 255, 0.18);
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --series-3: #199e70;
+    --series-4: #c98500;
+    --series-5: #d55181;
+    --series-6: #008300;
+    --series-7: #9085e9;
+    --series-8: #e66767;
+    --good-text: #0ca30c;
+    --critical-text: #e66767;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 4px 14px rgba(0, 0, 0, .3);
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --surface-1: #1a1a19;
+  --surface-2: #232322;
+  --page: #0d0d0d;
+  --text-primary: #ffffff;
+  --text-secondary: #c3c2b7;
+  --text-muted: #898781;
+  --gridline: #2c2c2a;
+  --axisline: #383835;
+  --border: rgba(255, 255, 255, 0.10);
+  --border-strong: rgba(255, 255, 255, 0.18);
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --series-3: #199e70;
+  --series-4: #c98500;
+  --series-5: #d55181;
+  --series-6: #008300;
+  --series-7: #9085e9;
+  --series-8: #e66767;
+  --good-text: #0ca30c;
+  --critical-text: #e66767;
+  --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 4px 14px rgba(0, 0, 0, .3);
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  background: var(--page);
+  color: var(--text-primary);
+  font-family: system-ui, -apple-system, "Segoe UI", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+  font-size: 15px;
+  line-height: 1.65;
+  -webkit-text-size-adjust: 100%;
+}
+h1, h2, h3, h4 { line-height: 1.35; margin: 0 0 .5em; font-weight: 650; }
+h1 { font-size: 1.5rem; }
+h2 { font-size: 1.22rem; }
+h3 { font-size: 1.02rem; }
+p { margin: 0 0 .8em; }
+a { color: var(--series-1); }
+code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .9em; background: var(--surface-2); padding: .1em .35em; border-radius: 4px; }
+
+/* --- 레이아웃 ------------------------------------------------------------ */
+.wrap { max-width: 1120px; margin: 0 auto; padding: 0 16px 64px; }
+
+header.top {
+  position: sticky; top: 0; z-index: 40;
+  background: color-mix(in srgb, var(--page) 88%, transparent);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--border);
+}
+.top-inner { max-width: 1120px; margin: 0 auto; padding: 10px 16px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.brand { font-weight: 700; font-size: 1.02rem; letter-spacing: -.01em; }
+.brand small { display: block; font-weight: 400; font-size: .74rem; color: var(--text-muted); letter-spacing: 0; }
+.top-spacer { flex: 1; }
+
+.badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: .78rem; padding: 3px 9px; border-radius: 999px;
+  border: 1px solid var(--border-strong); color: var(--text-secondary);
+  background: var(--surface-1); white-space: nowrap;
+}
+.badge .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-muted); }
+.badge.demo .dot { background: var(--warning); }
+.badge.real .dot { background: var(--good); }
+
+.iconbtn {
+  border: 1px solid var(--border-strong); background: var(--surface-1); color: var(--text-secondary);
+  border-radius: 8px; padding: 5px 10px; cursor: pointer; font-size: .82rem;
+}
+.iconbtn:hover { border-color: var(--text-muted); }
+
+nav.tabs { display: flex; gap: 2px; overflow-x: auto; padding: 6px 16px 0; max-width: 1120px; margin: 0 auto; }
+nav.tabs button {
+  border: 0; background: transparent; color: var(--text-secondary);
+  padding: 8px 13px; font-size: .92rem; cursor: pointer; white-space: nowrap;
+  border-bottom: 2px solid transparent; border-radius: 6px 6px 0 0;
+  font-family: inherit;
+}
+nav.tabs button:hover { color: var(--text-primary); background: var(--surface-2); }
+nav.tabs button.on { color: var(--text-primary); border-bottom-color: var(--series-1); font-weight: 600; }
+
+.panel { display: none; padding-top: 20px; }
+.panel.on { display: block; }
+
+/* --- 카드 ---------------------------------------------------------------- */
+.card {
+  background: var(--surface-1); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 18px; margin-bottom: 16px; box-shadow: var(--shadow);
+}
+.card > h2:first-child, .card > h3:first-child { margin-top: 0; }
+.card-sub { color: var(--text-secondary); font-size: .9rem; margin-top: -.3em; }
+
+.grid { display: grid; gap: 14px; }
+.grid.c2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.grid.c3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.grid.c4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@media (max-width: 860px) { .grid.c2, .grid.c3, .grid.c4 { grid-template-columns: 1fr; } }
+@media (max-width: 860px) { .grid.c4.keep2 { grid-template-columns: 1fr 1fr; } }
+
+/* --- 통계 타일 ----------------------------------------------------------- */
+.tile {
+  background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 12px 14px;
+}
+.tile .label { font-size: .78rem; color: var(--text-secondary); }
+.tile .value { font-size: 1.42rem; font-weight: 650; letter-spacing: -.02em; margin-top: 2px; }
+.tile .sub { font-size: .76rem; color: var(--text-muted); }
+.hero-num { font-size: 2.6rem; font-weight: 680; letter-spacing: -.03em; line-height: 1.1; }
+.up { color: var(--good-text); }
+.down { color: var(--critical-text); }
+
+/* --- 폼 ----------------------------------------------------------------- */
+.controls { display: flex; flex-wrap: wrap; gap: 14px 18px; align-items: flex-end; }
+.field { display: flex; flex-direction: column; gap: 4px; min-width: 130px; }
+.field label { font-size: .78rem; color: var(--text-secondary); }
+select, input[type="text"], input[type="number"], input[type="password"], textarea {
+  font-family: inherit; font-size: .9rem; padding: 7px 9px; border-radius: 8px;
+  border: 1px solid var(--border-strong); background: var(--surface-1); color: var(--text-primary);
+  min-width: 120px;
+}
+textarea { width: 100%; min-height: 110px; resize: vertical; }
+input[type="range"] { accent-color: var(--series-1); }
+.check { display: inline-flex; align-items: center; gap: 6px; font-size: .88rem; color: var(--text-secondary); cursor: pointer; }
+.check input { accent-color: var(--series-1); }
+
+button.btn {
+  font-family: inherit; font-size: .92rem; font-weight: 600;
+  padding: 9px 16px; border-radius: 8px; cursor: pointer;
+  border: 1px solid var(--series-1); background: var(--series-1); color: #fff;
+}
+button.btn:hover { filter: brightness(1.06); }
+button.btn:disabled { opacity: .55; cursor: not-allowed; }
+button.btn.ghost { background: var(--surface-1); color: var(--text-primary); border-color: var(--border-strong); }
+button.btn.ghost:hover { border-color: var(--text-muted); }
+button.btn.sm { padding: 6px 11px; font-size: .85rem; }
+button.btn.big { padding: 12px 22px; font-size: 1rem; }
+
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip {
+  display: inline-flex; align-items: center; gap: 6px; padding: 6px 11px; border-radius: 999px;
+  border: 1px solid var(--border-strong); background: var(--surface-1); cursor: pointer; font-size: .86rem;
+  color: var(--text-secondary);
+}
+.chip input { accent-color: var(--series-1); }
+.chip.on { border-color: var(--series-1); color: var(--text-primary); }
+
+/* --- 표 ----------------------------------------------------------------- */
+.tbl-wrap { overflow-x: auto; }
+table.tbl { border-collapse: collapse; width: 100%; font-size: .88rem; }
+table.tbl th, table.tbl td { padding: 7px 10px; border-bottom: 1px solid var(--border); text-align: left; white-space: nowrap; }
+table.tbl th { color: var(--text-secondary); font-weight: 600; font-size: .8rem; border-bottom-color: var(--border-strong); }
+table.tbl td.num, table.tbl th.num { text-align: right; font-variant-numeric: tabular-nums; }
+table.tbl tbody tr:hover { background: var(--surface-2); }
+table.tbl tr.best td { background: color-mix(in srgb, var(--series-1) 8%, transparent); }
+
+/* --- 차트 --------------------------------------------------------------- */
+.chart { width: 100%; height: 280px; display: block; }
+.chart.sm { height: 200px; }
+.chart.lg { height: 340px; }
+.chart-title { font-size: .92rem; font-weight: 600; margin-bottom: 2px; }
+.chart-note { font-size: .78rem; color: var(--text-muted); margin-bottom: 6px; }
+.legend { display: flex; flex-wrap: wrap; gap: 12px; font-size: .8rem; color: var(--text-secondary); margin: 6px 0 2px; }
+.legend-item { display: inline-flex; align-items: center; gap: 6px; }
+.legend-dot { width: 10px; height: 3px; border-radius: 2px; display: inline-block; }
+.legend-dot.dashed { background-image: linear-gradient(90deg, currentColor 50%, transparent 0); }
+
+.chart-tip {
+  position: fixed; z-index: 100; pointer-events: none;
+  background: var(--surface-1); border: 1px solid var(--border-strong); border-radius: 8px;
+  padding: 7px 10px; font-size: .8rem; box-shadow: var(--shadow); min-width: 130px;
+}
+.chart-tip .tip-h { color: var(--text-muted); margin-bottom: 3px; }
+.chart-tip .tip-r { display: flex; align-items: center; gap: 6px; }
+.chart-tip .dot { width: 8px; height: 8px; border-radius: 50%; }
+.chart-tip .tip-n { color: var(--text-secondary); }
+.chart-tip .tip-v { margin-left: auto; font-variant-numeric: tabular-nums; font-weight: 600; }
+
+/* --- 알림 박스 ----------------------------------------------------------- */
+.note {
+  border-left: 3px solid var(--series-1); background: var(--surface-2);
+  padding: 10px 14px; border-radius: 0 8px 8px 0; font-size: .88rem; margin: 10px 0;
+  color: var(--text-secondary);
+}
+.note strong { color: var(--text-primary); }
+.note.warn { border-left-color: var(--warning); }
+.note.bad { border-left-color: var(--critical); }
+.note.ok { border-left-color: var(--good); }
+.note ul { margin: .4em 0; padding-left: 1.2em; }
+
+.status { font-size: .85rem; color: var(--text-secondary); min-height: 1.4em; }
+.progress { height: 6px; background: var(--surface-2); border-radius: 999px; overflow: hidden; margin: 8px 0; display: none; }
+.progress.on { display: block; }
+.progress > div { height: 100%; background: var(--series-1); width: 0%; transition: width .15s linear; }
+
+/* --- 혼동행렬 ------------------------------------------------------------ */
+.cm { display: grid; grid-template-columns: auto 1fr 1fr; gap: 4px; font-size: .84rem; max-width: 420px; }
+.cm .h { color: var(--text-secondary); font-size: .76rem; display: flex; align-items: center; justify-content: center; text-align: center; }
+.cm .cell {
+  border-radius: 8px; padding: 12px 8px; text-align: center; font-variant-numeric: tabular-nums;
+  border: 1px solid var(--border); background: var(--surface-2);
+}
+.cm .cell b { display: block; font-size: 1.15rem; }
+.cm .cell span { font-size: .74rem; color: var(--text-muted); }
+.cm .cell.hit { background: color-mix(in srgb, var(--series-1) 14%, var(--surface-2)); }
+
+/* --- 모의투자 ------------------------------------------------------------ */
+.sim-head { display: flex; flex-wrap: wrap; gap: 18px; align-items: flex-end; }
+.gauge { width: 100%; height: 10px; border-radius: 999px; background: var(--surface-2); overflow: hidden; border: 1px solid var(--border); }
+.gauge > div { height: 100%; background: var(--series-1); width: 50%; }
+.sim-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 2px; }
+.trade-log { max-height: 220px; overflow-y: auto; }
+
+.kbd { font-size: .74rem; color: var(--text-muted); }
+.foot { color: var(--text-muted); font-size: .82rem; border-top: 1px solid var(--border); padding-top: 14px; margin-top: 24px; }
+.hidden { display: none !important; }
+.right { text-align: right; }
+.nowrap { white-space: nowrap; }
+.mt0 { margin-top: 0; }
+.mb0 { margin-bottom: 0; }
+.small { font-size: .84rem; color: var(--text-secondary); }
+.tiny { font-size: .76rem; color: var(--text-muted); }
+
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="top-inner">
+    <div class="brand">금리와 주가, 그리고 머신러닝
+      <small>영남대 SW중심대학사업단 AI·SW 러닝메이트 멘토링 · 교육/연구용</small>
+    </div>
+    <div class="top-spacer"></div>
+    <span class="badge demo" id="dataBadge"><span class="dot"></span><span id="dataBadgeText">데이터 없음</span></span>
+    <button class="iconbtn" id="themeBtn" title="밝게/어둡게">화면 전환</button>
+  </div>
+  <nav class="tabs" id="tabs">
+    <button data-tab="home" class="on">개요</button>
+    <button data-tab="data">1. 데이터</button>
+    <button data-tab="models">2. 모델 비교</button>
+    <button data-tab="backtest">3. 백테스트</button>
+    <button data-tab="sim">4. 모의투자</button>
+    <button data-tab="vol">5. 변동성</button>
+    <button data-tab="glossary">용어</button>
+  </nav>
+</header>
+
+<div class="wrap">
+
+<!-- ======================= 개요 ======================= -->
+<section class="panel on" id="panel-home">
+  <div class="card">
+    <h1 class="mb0">주가는 정말 예측할 수 있을까?</h1>
+    <p class="card-sub">데이터를 넣고, 모델을 학습시키고, 거래비용까지 물려서 직접 확인해 보세요.</p>
+    <p>이 사이트는 <code>phase1a~phase3</code> 파이썬 연구 코드를 브라우저에서 그대로 돌려 볼 수 있게 옮긴 것입니다.
+      설치할 것도, API 키도 없이 바로 시작할 수 있고, 원하면 실제 시장 데이터를 넣어 다시 확인할 수 있습니다.</p>
+    <div class="sim-actions">
+      <button class="btn big" id="quickRun">지금 바로 실행해 보기</button>
+      <button class="btn ghost big" data-goto="data">데이터부터 고르기</button>
+    </div>
+    <div class="status" id="quickStatus"></div>
+    <div class="progress" id="quickProg"><div></div></div>
+  </div>
+
+  <div class="grid c4 keep2">
+    <div class="tile"><div class="label">1단계 · 데이터</div><div class="value">주가 + 금리</div><div class="sub">데모(가상) / CSV / 인터넷</div></div>
+    <div class="tile"><div class="label">2단계 · 모델 비교</div><div class="value">7가지</div><div class="sub">AI 4종 + 기준선 3종</div></div>
+    <div class="tile"><div class="label">3단계 · 백테스트</div><div class="value">비용 반영</div><div class="sub">워크포워드 재학습</div></div>
+    <div class="tile"><div class="label">4단계 · 모의투자</div><div class="value">직접 매매</div><div class="sub">AI·매수보유와 대결</div></div>
+  </div>
+
+  <div class="card">
+    <h2>이 프로젝트의 목표</h2>
+    <p>돈을 버는 것이 아니라, <strong>시장이 왜 이렇게 예측하기 어려운지를 데이터로 확인하는 것</strong>이 목적입니다.
+      그래서 다음 원칙을 지킵니다.</p>
+    <ul>
+      <li>정확도가 낮게 나와도 실패가 아닙니다. 오히려 정직한 결과입니다.</li>
+      <li>정확도가 지나치게 높으면(예: 90%) 데이터 누수를 의심해야 합니다. 이 사이트는 그런 신호를 자동으로 경고합니다.</li>
+      <li>학습은 언제나 과거만 봅니다. 무작위로 섞지 않고 시간 순서대로 나눕니다.</li>
+      <li>구할 수 없는 데이터는 지어내지 않습니다. 데모 데이터는 화면 어디서나 <em>가상</em>이라고 표시합니다.</li>
+    </ul>
+    <div class="note warn"><strong>주의.</strong> 교육·연구용입니다. 실제 투자 판단에 사용하지 마십시오.
+      백테스트 결과가 좋아도 미래 수익을 보장하지 않습니다.</div>
+  </div>
+
+  <div class="card">
+    <h2>검증하려는 가설</h2>
+    <p class="small">결론이 아니라 확인할 질문입니다. 데이터가 지지할 수도, 반박할 수도 있으며 어느 쪽이든 그대로 봅니다.</p>
+    <div class="tbl-wrap" id="hypoTable"></div>
+  </div>
+
+  <div class="card">
+    <h2>결과를 읽는 법</h2>
+    <ol>
+      <li><strong>AUC를 먼저 봅니다.</strong> 정확도는 상승일이 많으면 "무조건 오른다"만 찍어도 높아져 속기 쉽습니다. AUC가 0.5면 판별력이 전혀 없다는 뜻입니다.</li>
+      <li><strong>상승예측비율을 확인합니다.</strong> 모델이 90% 이상을 "상승"으로 찍고 있으면 예측이 아니라 다수결 흉내입니다.</li>
+      <li><strong>정확도와 기준선을 비교합니다.</strong> 비교 대상은 동전 던지기(0.5)가 아니라 기준선입니다.</li>
+      <li><strong>백테스트에서 수익이 났어도</strong> 거래비용을 빼면 사라질 수 있습니다.</li>
+    </ol>
+  </div>
+</section>
+
+<!-- ======================= 데이터 ======================= -->
+<section class="panel" id="panel-data">
+  <div class="card">
+    <h2>데이터 고르기</h2>
+    <p class="card-sub">아무것도 설치하지 않고 시작하려면 데모(가상) 데이터를, 실제 시장을 보려면 CSV나 인터넷 불러오기를 쓰세요.</p>
+    <div class="chips" id="sourceChips">
+      <label class="chip on"><input type="radio" name="src" value="demo" checked>데모(가상) 데이터</label>
+      <label class="chip"><input type="radio" name="src" value="file">CSV 파일 올리기</label>
+      <label class="chip"><input type="radio" name="src" value="paste">CSV 붙여넣기</label>
+      <label class="chip"><input type="radio" name="src" value="net">인터넷에서 받기</label>
+    </div>
+
+    <!-- 데모 -->
+    <div id="srcDemo" class="src-box" style="margin-top:14px">
+      <div class="controls">
+        <div class="field"><label for="demoN">거래일 수</label>
+          <select id="demoN"><option value="1300">약 5년 (1,300일)</option><option value="2600">약 10년 (2,600일)</option><option value="3800" selected>약 15년 (3,800일)</option></select></div>
+        <div class="field"><label for="demoSignal">숨은 신호 강도 <span id="demoSignalV" class="tiny">0.06</span></label>
+          <input type="range" id="demoSignal" min="0" max="0.30" step="0.01" value="0.06"></div>
+        <div class="field"><label for="demoSeed">난수 시드</label><input type="number" id="demoSeed" value="42" min="1" step="1"></div>
+        <button class="btn" id="loadDemo">이 데이터로 시작</button>
+      </div>
+      <div class="note">숨은 신호 강도를 <strong>0</strong>으로 두면 예측할 거리가 전혀 없는 시계열이 됩니다.
+        그때 모델의 AUC가 0.5 근처로 나오는지 확인해 보세요. 도구가 제대로 작동하는지 점검하는 좋은 방법입니다.
+        값을 키우면 "신호가 있으면 모델이 정말 찾아내는가"를 볼 수 있습니다.</div>
+    </div>
+
+    <!-- 파일 -->
+    <div id="srcFile" class="src-box hidden" style="margin-top:14px">
+      <div class="controls">
+        <div class="field"><label for="csvFile">CSV 파일</label><input type="file" id="csvFile" accept=".csv,.txt,.tsv"></div>
+      </div>
+      <div class="note">필요한 열: <code>Date</code>(또는 날짜), <code>Close</code>(또는 종가). 금리 열(<code>Rate</code>/<code>금리</code>/<code>DGS2</code>)이 있으면 금리 특징까지 씁니다.
+        야후 파이낸스·증권사에서 받은 CSV를 그대로 올려도 됩니다.</div>
+    </div>
+
+    <!-- 붙여넣기 -->
+    <div id="srcPaste" class="src-box hidden" style="margin-top:14px">
+      <textarea id="csvText" placeholder="Date,Close,Rate&#10;2015-01-02,2058.20,0.67&#10;2015-01-05,2020.58,0.63&#10;..."></textarea>
+      <div class="controls" style="margin-top:8px">
+        <button class="btn" id="loadPaste">붙여넣은 데이터로 시작</button>
+      </div>
+      <div class="note">Colab에서 <code>df.to_csv()</code>로 뽑은 내용을 그대로 붙여넣어도 됩니다.</div>
+    </div>
+
+    <!-- 인터넷 -->
+    <div id="srcNet" class="src-box hidden" style="margin-top:14px">
+      <div class="controls">
+        <div class="field"><label for="netProvider">제공처</label>
+          <select id="netProvider">
+            <option value="av">Alpha Vantage (무료 키, 가장 안정적)</option>
+            <option value="fred">FRED (무료 키)</option>
+            <option value="stooq">Stooq (키 없음, 차단될 수 있음)</option>
+          </select></div>
+        <div class="field" id="fSymbol"><label for="netSymbol">종목/시리즈</label><input type="text" id="netSymbol" value="SPY"></div>
+        <div class="field" id="fRate"><label for="netRate">금리</label><input type="text" id="netRate" value="2year"></div>
+        <div class="field" id="fKey"><label for="netKey">API 키</label><input type="password" id="netKey" placeholder="키를 붙여넣으세요"></div>
+        <button class="btn" id="loadNet">불러오기</button>
+      </div>
+      <div class="status" id="netStatus"></div>
+      <div class="note">키는 브라우저 안에서만 쓰이고 어디에도 저장·전송되지 않습니다(제공처 서버 제외).
+        Alpha Vantage 키는 <a href="https://www.alphavantage.co/support/#api-key" target="_blank" rel="noopener">여기</a>에서,
+        FRED 키는 <a href="https://fred.stlouisfed.org/docs/api/api_key.html" target="_blank" rel="noopener">여기</a>에서 무료로 받습니다.
+        브라우저 보안 정책(CORS) 때문에 막히면 CSV 방식을 쓰세요.</div>
+    </div>
+  </div>
+
+  <div id="dataResult" class="hidden">
+    <div class="grid c4 keep2" id="dataTiles"></div>
+    <div class="card">
+      <div class="chart-title" id="priceTitle">주가</div>
+      <div class="chart-note">아래로 마우스를 올리면 날짜별 값을 볼 수 있습니다.</div>
+      <canvas class="chart lg" id="chartPrice"></canvas>
+    </div>
+    <div class="card" id="rateCard">
+      <div class="chart-title" id="rateTitle">금리(%)</div>
+      <div class="chart-note">주가와 금리는 단위가 달라 한 그래프에 겹치지 않고 따로 그립니다.</div>
+      <canvas class="chart" id="chartRate"></canvas>
+    </div>
+    <div class="card">
+      <h3>모델에 넣는 값(특징) 미리보기</h3>
+      <p class="small">주가·금리를 그대로 쓰지 않고, 시기가 달라져도 성질이 변하지 않는 <strong>비율·변화량</strong>으로 바꿔 씁니다(정상성).</p>
+      <div class="tbl-wrap" id="featPreview"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ======================= 모델 비교 ======================= -->
+<section class="panel" id="panel-models">
+  <div class="card">
+    <h2>모델 비교 <span class="tiny">— Phase 1-a</span></h2>
+    <p class="card-sub">"N일 뒤에 오를까 내릴까"를 여러 모델로 맞혀 보고 성적을 나란히 비교합니다.</p>
+    <div class="controls">
+      <div class="field"><label for="mHorizon">예측 시계</label>
+        <select id="mHorizon"><option value="1">1일 뒤 (내일)</option><option value="5" selected>5일 뒤 (약 1주)</option><option value="20">20일 뒤 (약 1달)</option><option value="60">60일 뒤 (약 3달)</option></select></div>
+      <div class="field"><label for="mValidation">검증 방식</label>
+        <select id="mValidation"><option value="holdout" selected>시간순 분할 (앞 80% 학습)</option><option value="walk">워크포워드 (재학습 반복, 느림)</option></select></div>
+      <div class="field"><label for="mRatio">학습 비율 <span id="mRatioV" class="tiny">0.80</span></label>
+        <input type="range" id="mRatio" min="0.5" max="0.9" step="0.05" value="0.8"></div>
+      <div class="field"><label for="mThreshold">판정 문턱값 <span id="mThresholdV" class="tiny">0.50</span></label>
+        <input type="range" id="mThreshold" min="0.3" max="0.7" step="0.01" value="0.5"></div>
+    </div>
+    <div class="controls" style="margin-top:10px">
+      <label class="check"><input type="checkbox" id="mRate" checked> 금리 특징 사용 (가설 H2)</label>
+      <label class="check"><input type="checkbox" id="mExtra"> 확장 특징(변동성·장기모멘텀) 추가</label>
+      <label class="check"><input type="checkbox" id="mWeight" checked> 클래스 가중치 (다수결 흉내 방지)</label>
+    </div>
+    <div style="margin-top:12px">
+      <div class="tiny" style="margin-bottom:6px">비교할 모델</div>
+      <div class="chips" id="modelChips"></div>
+    </div>
+    <div class="controls" style="margin-top:14px">
+      <button class="btn" id="runModels">학습하고 비교하기</button>
+      <button class="btn ghost" id="runRateAB">금리 넣은 것과 뺀 것 비교 (H2)</button>
+    </div>
+    <div class="status" id="modelStatus"></div>
+    <div class="progress" id="modelProg"><div></div></div>
+  </div>
+
+  <div id="modelResult" class="hidden">
+    <div id="modelWarnings"></div>
+    <div class="card">
+      <h3>성적표</h3>
+      <p class="small">AUC를 먼저 보고, 상승예측비율과 <em>정확도−기준선</em>을 함께 확인하세요.</p>
+      <div class="tbl-wrap" id="modelTable"></div>
+    </div>
+    <div class="grid c2">
+      <div class="card">
+        <div class="chart-title">AUC — 오를 날과 내릴 날을 구별하는 힘</div>
+        <div class="chart-note">0.5는 실력 없음. 세로선이 그 기준입니다.</div>
+        <canvas class="chart" id="chartAuc"></canvas>
+      </div>
+      <div class="card">
+        <div class="chart-title">ROC 곡선</div>
+        <div class="chart-note">점선(대각선)에 붙을수록 판별력이 없다는 뜻입니다.</div>
+        <div id="rocLegend"></div>
+        <canvas class="chart" id="chartRoc"></canvas>
+      </div>
+    </div>
+    <div class="grid c2">
+      <div class="card">
+        <h3>혼동행렬</h3>
+        <div class="controls" style="margin-bottom:10px">
+          <div class="field"><label for="cmModel">모델 선택</label><select id="cmModel"></select></div>
+        </div>
+        <div class="cm" id="confMatrix"></div>
+      </div>
+      <div class="card">
+        <div class="chart-title">변수 중요도</div>
+        <div class="chart-note" id="impNote">모델이 어떤 값을 많이 참고했는지. 합이 1이 되도록 맞춘 상대값입니다.</div>
+        <canvas class="chart" id="chartImp"></canvas>
+      </div>
+    </div>
+    <div class="card" id="modelReading"></div>
+  </div>
+
+  <div id="abResult" class="hidden">
+    <div class="card">
+      <h3>금리 특징의 효과 (가설 H2)</h3>
+      <p class="small">같은 모델·같은 구간에서 금리 변수만 넣고 뺐을 때의 차이입니다. 차이가 거의 없다면 효율적 시장 가설과 어울리는 결과입니다.</p>
+      <div class="tbl-wrap" id="abTable"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ======================= 백테스트 ======================= -->
+<section class="panel" id="panel-backtest">
+  <div class="card">
+    <h2>백테스트 <span class="tiny">— Phase 1-b</span></h2>
+    <p class="card-sub">"그 예측대로 실제로 투자했다면?" 워크포워드로 계속 재학습하고, 거래비용까지 물립니다.</p>
+    <div class="controls">
+      <div class="field"><label for="bModel">모델</label><select id="bModel"></select></div>
+      <div class="field"><label for="bHorizon">예측 시계</label>
+        <select id="bHorizon"><option value="1" selected>1일 뒤 (내일)</option><option value="5">5일 뒤</option><option value="20">20일 뒤</option></select></div>
+      <div class="field"><label for="bStart">워크포워드 시작 <span id="bStartV" class="tiny">60%</span></label>
+        <input type="range" id="bStart" min="0.4" max="0.8" step="0.05" value="0.6"></div>
+      <div class="field"><label for="bStep">재학습 간격(거래일)</label>
+        <select id="bStep"><option value="25">25일 (촘촘·느림)</option><option value="50">50일</option><option value="100" selected>100일 (빠름)</option></select></div>
+      <div class="field"><label for="bCost">편도 거래비용(%) </label><input type="number" id="bCost" value="0.05" step="0.01" min="0"></div>
+      <div class="field"><label for="bSlip">슬리피지(%)</label><input type="number" id="bSlip" value="0.05" step="0.01" min="0"></div>
+      <div class="field"><label for="bThreshold">문턱값 <span id="bThresholdV" class="tiny">0.50</span></label>
+        <input type="range" id="bThreshold" min="0.3" max="0.7" step="0.01" value="0.5"></div>
+      <button class="btn" id="runBacktest">백테스트 실행</button>
+    </div>
+    <div class="status" id="btStatus"></div>
+    <div class="progress" id="btProg"><div></div></div>
+  </div>
+
+  <div id="btResult" class="hidden">
+    <div class="grid c4 keep2" id="btTiles"></div>
+    <div class="card">
+      <div class="chart-title">자산 곡선 (시작 = 1)</div>
+      <div class="chart-note">비용 전과 비용 후의 간격이 곧 수수료가 먹은 몫입니다.</div>
+      <div id="btLegend"></div>
+      <canvas class="chart lg" id="chartEquity"></canvas>
+    </div>
+    <div class="card">
+      <h3>성과 비교</h3>
+      <div class="tbl-wrap" id="btTable"></div>
+    </div>
+    <div class="card">
+      <div class="chart-title">거래비용을 올리면?</div>
+      <div class="chart-note">왕복 비용별 최종 누적수익. 회색 막대는 매수 후 보유에 진 경우입니다.</div>
+      <canvas class="chart" id="chartCost"></canvas>
+    </div>
+    <div class="card" id="btReading"></div>
+  </div>
+</section>
+
+<!-- ======================= 모의투자 ======================= -->
+<section class="panel" id="panel-sim">
+  <div class="card">
+    <h2>모의투자</h2>
+    <p class="card-sub">하루씩 넘기며 직접 사고팔아 보세요. 같은 조건의 AI 자동매매, 그리고 그냥 사서 들고 있기와 나란히 겨룹니다.</p>
+    <div class="controls">
+      <div class="field"><label for="sModel">AI 모델</label><select id="sModel"></select></div>
+      <div class="field"><label for="sCash">시작 자본</label>
+        <select id="sCash"><option value="1000000">100만원</option><option value="10000000" selected>1,000만원</option><option value="100000000">1억원</option></select></div>
+      <div class="field"><label for="sFee">거래비용(편도 %)</label><input type="number" id="sFee" value="0.1" step="0.01" min="0"></div>
+      <div class="field"><label for="sThreshold">AI 매수 문턱값 <span id="sThresholdV" class="tiny">0.50</span></label>
+        <input type="range" id="sThreshold" min="0.3" max="0.7" step="0.01" value="0.5"></div>
+      <button class="btn" id="startSim">모의투자 시작</button>
+    </div>
+    <div class="status" id="simStatus"></div>
+    <div class="progress" id="simProg"><div></div></div>
+    <div class="note">AI는 그날까지의 정보로 만든 예측만 보고 다음 날 포지션을 정합니다. 미래를 미리 알지 못합니다.
+      공매도·레버리지는 없고 현금과 주식 사이만 오갑니다.</div>
+  </div>
+
+  <div id="simBoard" class="hidden">
+    <div class="card">
+      <div class="grid c3">
+        <div>
+          <div class="tile" style="border:0;padding:0;background:transparent">
+            <div class="label">내 총자산</div>
+            <div class="hero-num" id="simEquity">—</div>
+            <div class="sub" id="simEquitySub">—</div>
+          </div>
+        </div>
+        <div>
+          <div class="label tiny">오늘 (<span id="simDate">—</span>)</div>
+          <div class="value" style="font-size:1.3rem;font-weight:650" id="simPrice">—</div>
+          <div class="sub tiny" id="simChange">—</div>
+          <div style="margin-top:10px">
+            <div class="label tiny">현금 / 주식 비중</div>
+            <div class="gauge"><div id="simWeightBar" style="background:var(--series-3)"></div></div>
+            <div class="tiny" id="simWeightText">—</div>
+          </div>
+        </div>
+        <div>
+          <div class="label tiny">AI가 본 내일 상승 확률</div>
+          <div class="value" style="font-size:1.3rem;font-weight:650" id="simProba">—</div>
+          <div class="gauge" style="margin-top:6px"><div id="simProbaBar"></div></div>
+          <div class="sub tiny" id="simSignal">—</div>
+        </div>
+      </div>
+
+      <div class="sim-actions" style="margin-top:16px">
+        <button class="btn" data-act="buy1">전액 매수</button>
+        <button class="btn ghost" data-act="buy05">절반 매수</button>
+        <button class="btn ghost" data-act="sell05">절반 매도</button>
+        <button class="btn ghost" data-act="sell1">전액 매도</button>
+      </div>
+      <div class="sim-actions">
+        <button class="btn ghost sm" data-step="1">하루 넘기기</button>
+        <button class="btn ghost sm" data-step="5">5일</button>
+        <button class="btn ghost sm" data-step="20">20일</button>
+        <button class="btn ghost sm" data-step="end">끝까지</button>
+        <label class="check" style="margin-left:6px"><input type="checkbox" id="simFollow"> AI가 시키는 대로 따라하기</label>
+      </div>
+      <div class="tiny" id="simProgressText">—</div>
+    </div>
+
+    <div class="card">
+      <div class="chart-title">자산 곡선 비교</div>
+      <div id="simLegend"></div>
+      <canvas class="chart lg" id="chartSim"></canvas>
+    </div>
+    <div class="card">
+      <div class="chart-title">가격 흐름 (지금까지 진행한 구간)</div>
+      <canvas class="chart" id="chartSimPrice"></canvas>
+    </div>
+    <div class="card">
+      <h3>성적</h3>
+      <div class="tbl-wrap" id="simTable"></div>
+    </div>
+    <div class="card">
+      <h3>내 거래 기록</h3>
+      <div class="tbl-wrap trade-log" id="simLog"><p class="small">아직 거래가 없습니다.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- ======================= 변동성 ======================= -->
+<section class="panel" id="panel-vol">
+  <div class="card">
+    <h2>변동성 분석 <span class="tiny">— Phase 1-c</span></h2>
+    <p class="card-sub">GARCH는 '오를까 내릴까'가 아니라 '얼마나 출렁일까'를 다룹니다. 그래서 정확도 표에 넣지 않고 따로 봅니다.</p>
+    <div class="controls">
+      <button class="btn" id="runVol">변동성 분석 실행</button>
+      <label class="check"><input type="checkbox" id="volNextDay" checked> 정책 발표 다음 날까지 이벤트로 포함</label>
+    </div>
+    <div class="status" id="volStatus"></div>
+  </div>
+  <div id="volResult" class="hidden">
+    <div class="grid c4 keep2" id="volTiles"></div>
+    <div class="card">
+      <div class="chart-title">GARCH(1,1) 조건부 변동성 (연율화 %)</div>
+      <div class="chart-note">변동성은 뭉쳐서 옵니다. 한 번 커지면 한동안 큰 상태가 유지됩니다.</div>
+      <div id="volLegend"></div>
+      <canvas class="chart lg" id="chartVol"></canvas>
+    </div>
+    <div class="card">
+      <div class="chart-title">정책 발표일 전후 vs 평소 — |일간 수익률| 분포</div>
+      <div class="chart-note">세로축은 각 집단 안에서의 비율입니다(표본 수가 달라도 비교할 수 있게).</div>
+      <div id="volHistLegend"></div>
+      <canvas class="chart" id="chartVolHist"></canvas>
+      <div id="volTest"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ======================= 용어 ======================= -->
+<section class="panel" id="panel-glossary">
+  <div class="card">
+    <h2>용어 정리</h2>
+    <p class="card-sub">모르는 말이 나오면 여기에서 찾아보세요.</p>
+    <div class="controls" style="margin-bottom:10px">
+      <div class="field" style="min-width:260px"><label for="glossSearch">검색</label>
+        <input type="text" id="glossSearch" placeholder="예: AUC, 샤프, 누수"></div>
+    </div>
+    <div class="tbl-wrap" id="glossTable"></div>
+  </div>
+  <div class="card">
+    <h2>이 사이트와 파이썬 코드의 관계</h2>
+    <div class="tbl-wrap" id="mapTable"></div>
+    <div class="note">브라우저에서는 scikit-learn·XGBoost·케라스를 쓸 수 없어 같은 알고리즘을 자바스크립트로 직접 구현했습니다.
+      구조와 규칙(시간순 분할, 클래스 가중치, 누수 방지)은 파이썬 코드와 같지만, 세부 구현과 하이퍼파라미터가 달라
+      숫자가 완전히 똑같지는 않습니다. 정식 결과는 파이썬 스크립트로 확인하세요.
+      LSTM 대신 신경망(MLP)을 쓰는 것도 같은 이유입니다.</div>
+  </div>
+</section>
+
+  <div class="foot">
+    교육·연구용 도구입니다. 실제 투자 판단에 사용하지 마십시오. 백테스트 결과는 미래 수익을 보장하지 않습니다.
+  </div>
+</div>
+
+<script>
+/* ===== js/util.js ===== */
+/* ============================================================================
+ *  util.js — 공통 도우미
+ *  난수(시드 고정), 숫자 서식, 통계 함수, DOM 단축 함수
+ *  파이썬 쪽 SEED=42 고정과 같은 목적: 같은 설정이면 같은 결과가 나오게 합니다.
+ * ==========================================================================*/
+(function (root) {
+  'use strict';
+  const U = {};
+
+  // --- 시드 고정 난수 (mulberry32) ------------------------------------------
+  U.rng = function (seed) {
+    let a = seed >>> 0;
+    const f = function () {
+      a |= 0; a = (a + 0x6D2B79F5) | 0;
+      let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+    // 표준정규 (Box-Muller)
+    f.normal = function () {
+      let u = 0, v = 0;
+      while (u === 0) u = f();
+      while (v === 0) v = f();
+      return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+    };
+    f.int = function (n) { return Math.floor(f() * n); };
+    return f;
+  };
+
+  // --- 숫자 서식 -------------------------------------------------------------
+  U.fmt = function (x, d) {
+    if (x === null || x === undefined || !isFinite(x)) return '—';
+    d = (d === undefined) ? 3 : d;
+    return x.toFixed(d);
+  };
+  U.pct = function (x, d) {
+    if (x === null || x === undefined || !isFinite(x)) return '—';
+    d = (d === undefined) ? 2 : d;
+    return (x * 100).toFixed(d) + '%';
+  };
+  U.signPct = function (x, d) {
+    if (x === null || x === undefined || !isFinite(x)) return '—';
+    return (x >= 0 ? '+' : '') + U.pct(x, d);
+  };
+  U.won = function (x) {
+    if (!isFinite(x)) return '—';
+    return Math.round(x).toLocaleString('ko-KR') + '원';
+  };
+  U.comma = function (x) {
+    if (!isFinite(x)) return '—';
+    return Math.round(x).toLocaleString('ko-KR');
+  };
+  U.compact = function (x) {
+    const a = Math.abs(x);
+    if (a >= 1e12) return (x / 1e12).toFixed(1) + '조';
+    if (a >= 1e8) return (x / 1e8).toFixed(1) + '억';
+    if (a >= 1e4) return (x / 1e4).toFixed(0) + '만';
+    return U.comma(x);
+  };
+
+  // --- 배열/통계 -------------------------------------------------------------
+  U.mean = function (a) {
+    if (!a.length) return NaN;
+    let s = 0;
+    for (let i = 0; i < a.length; i++) s += a[i];
+    return s / a.length;
+  };
+  U.std = function (a, ddof) {
+    ddof = ddof || 0;
+    const n = a.length;
+    if (n - ddof <= 0) return NaN;
+    const m = U.mean(a);
+    let s = 0;
+    for (let i = 0; i < n; i++) { const d = a[i] - m; s += d * d; }
+    return Math.sqrt(s / (n - ddof));
+  };
+  U.quantile = function (arr, q) {
+    if (!arr.length) return NaN;
+    const a = Float64Array.from(arr).sort();
+    const pos = (a.length - 1) * q;
+    const lo = Math.floor(pos), hi = Math.ceil(pos);
+    if (lo === hi) return a[lo];
+    return a[lo] + (a[hi] - a[lo]) * (pos - lo);
+  };
+  U.sum = function (a) { let s = 0; for (let i = 0; i < a.length; i++) s += a[i]; return s; };
+  U.range = function (n) { const a = new Array(n); for (let i = 0; i < n; i++) a[i] = i; return a; };
+  U.clamp = function (x, lo, hi) { return x < lo ? lo : (x > hi ? hi : x); };
+
+  // --- 분포 함수 -------------------------------------------------------------
+  // 표준정규 누적분포 (오차함수 근사, Abramowitz & Stegun 7.1.26)
+  U.normCdf = function (z) {
+    const s = z < 0 ? -1 : 1;
+    const x = Math.abs(z) / Math.SQRT2;
+    const t = 1 / (1 + 0.3275911 * x);
+    const y = 1 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-x * x);
+    return 0.5 * (1 + s * y);
+  };
+  // 양측 p값 (정규근사)
+  U.twoSidedP = function (z) { return 2 * (1 - U.normCdf(Math.abs(z))); };
+
+  // 두 집단 평균 비교 (Welch t검정, 정규근사 p값)
+  U.welchT = function (a, b) {
+    const na = a.length, nb = b.length;
+    if (na < 2 || nb < 2) return { t: NaN, p: NaN, ma: NaN, mb: NaN };
+    const ma = U.mean(a), mb = U.mean(b);
+    const va = Math.pow(U.std(a, 1), 2), vb = Math.pow(U.std(b, 1), 2);
+    const se = Math.sqrt(va / na + vb / nb);
+    const t = se > 0 ? (ma - mb) / se : NaN;
+    return { t: t, p: isFinite(t) ? U.twoSidedP(t) : NaN, ma: ma, mb: mb, na: na, nb: nb };
+  };
+
+  // 이항검정(정규근사): 정확도가 기준선보다 유의하게 높은가
+  U.binomP = function (successes, n, p0) {
+    if (!n || !isFinite(p0)) return NaN;
+    const se = Math.sqrt(p0 * (1 - p0) / n);
+    if (se <= 0) return NaN;
+    const z = (successes / n - p0) / se;
+    return U.twoSidedP(z);
+  };
+
+  // --- 날짜 -----------------------------------------------------------------
+  U.dstr = function (d) {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return y + '-' + m + '-' + dd;
+  };
+  U.parseDate = function (s) {
+    const p = String(s).trim().slice(0, 10).split(/[-/.]/);
+    if (p.length < 3) return null;
+    const d = new Date(Date.UTC(+p[0], +p[1] - 1, +p[2]));
+    return isNaN(d.getTime()) ? null : d;
+  };
+
+  // --- DOM ------------------------------------------------------------------
+  U.$ = function (sel, ctx) { return (ctx || document).querySelector(sel); };
+  U.$$ = function (sel, ctx) { return Array.prototype.slice.call((ctx || document).querySelectorAll(sel)); };
+  U.el = function (tag, cls, text) {
+    const e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text !== undefined) e.textContent = text;
+    return e;
+  };
+  // 표 만들기: headers = [문자열], rows = [[값]]
+  U.table = function (headers, rows, opts) {
+    opts = opts || {};
+    const numCls = opts.text ? '' : 'num';      // opts.text=true면 모든 칸을 왼쪽 정렬(글자 표)
+    const t = U.el('table', 'tbl' + (opts.cls ? ' ' + opts.cls : ''));
+    const thead = U.el('thead');
+    const tr = U.el('tr');
+    headers.forEach(function (h, j) {
+      const th = U.el('th', j === 0 ? '' : numCls, h);
+      tr.appendChild(th);
+    });
+    thead.appendChild(tr); t.appendChild(thead);
+    const tb = U.el('tbody');
+    rows.forEach(function (r) {
+      const tr2 = U.el('tr');
+      if (r.__cls) tr2.className = r.__cls;
+      r.forEach(function (c, j) {
+        const td = U.el('td', j === 0 ? '' : numCls);
+        if (c && c.nodeType) td.appendChild(c);
+        else td.innerHTML = (c === null || c === undefined) ? '' : String(c);
+        tr2.appendChild(td);
+      });
+      tb.appendChild(tr2);
+    });
+    t.appendChild(tb);
+    return t;
+  };
+
+  // 다음 프레임까지 양보 (긴 계산 중 화면이 멈추지 않게)
+  U.yield_ = function () {
+    return new Promise(function (res) { setTimeout(res, 0); });
+  };
+
+  root.U = U;
+})(window.FRSP = window.FRSP || {});
+
+</script>
+<script>
+/* ===== js/data.js ===== */
+/* ============================================================================
+ *  data.js — 데이터 준비
+ *   1) 데모용 가상 데이터 생성 (시드 고정)   ※ 실제 시장 데이터가 아닙니다
+ *   2) CSV 불러오기 (파일 업로드 / 붙여넣기)
+ *   3) 인터넷에서 직접 받기 (Alpha Vantage / FRED / Stooq)
+ *   4) 특징(feature) 생성 — phase1a_model_comparison.py의 make_features와 동일
+ * ==========================================================================*/
+(function (root) {
+  'use strict';
+  const U = root.U;
+  const D = {};
+
+  /* --------------------------------------------------------------------------
+   *  특징 정의 — 파이썬 코드와 같은 구성
+   *  정상성(stationarity): 주가·금리를 그대로 쓰지 않고 비율/변화량으로 바꿔 씁니다.
+   * ------------------------------------------------------------------------*/
+  D.BASE_FEATURES = ['return', 'px_vs_ma5', 'px_vs_ma20', 'ma5_vs_ma20'];
+  D.RATE_FEATURES = ['rate_change', 'rate_change_20'];
+  D.EXTRA_FEATURES = ['vol20', 'mom60'];
+  D.FEATURE_LABEL = {
+    'return': '일간 등락률',
+    'px_vs_ma5': '주가/5일평균-1 (단기 이격도)',
+    'px_vs_ma20': '주가/20일평균-1 (중기 이격도)',
+    'ma5_vs_ma20': '5일평균/20일평균-1 (모멘텀)',
+    'rate_change': '하루 금리 변화',
+    'rate_change_20': '20일 금리 변화',
+    'vol20': '20일 변동성 (확장)',
+    'mom60': '60일 모멘텀 (확장)'
+  };
+  // 좁은 표에서 쓰는 짧은 이름
+  D.FEATURE_SHORT = {
+    'return': '등락률', 'px_vs_ma5': '단기이격', 'px_vs_ma20': '중기이격', 'ma5_vs_ma20': '모멘텀',
+    'rate_change': '금리변화(1일)', 'rate_change_20': '금리변화(20일)', 'vol20': '변동성', 'mom60': '장기모멘텀'
+  };
+
+  /* ==========================================================================
+   *  [1] 데모용 가상 데이터
+   * ------------------------------------------------------------------------
+   *  실제 시장 데이터를 흉내 낸 '가상' 시계열입니다. 화면 어디에서나 '가상'이라고
+   *  표시합니다. 실제 시장 데이터가 필요하면 CSV 탭 또는 인터넷 불러오기를 쓰세요.
+   *
+   *  구성
+   *   - 금리: 시기별로 다른 목표금리를 향해 천천히 움직이고, 정책 발표일에 점프
+   *   - 주가: 대부분 예측 불가능한 잡음 + (선택) 아주 약한 숨은 신호
+   *   - 변동성: 뭉쳐서 온다(volatility clustering) — GARCH 비슷한 구조
+   *  '숨은 신호 강도'를 0으로 두면 이론상 예측이 전혀 되지 않아야 하며,
+   *  그때 모델의 AUC가 0.5 근처로 나오는지 확인하는 것이 좋은 점검이 됩니다.
+   * ========================================================================*/
+  D.makeDemo = function (opts) {
+    opts = opts || {};
+    const n = opts.n || 3800;                 // 거래일 수 (약 15년)
+    const signal = (opts.signal === undefined ? 0.06 : opts.signal); // 숨은 신호 강도 0~0.3
+    const seed = opts.seed || 42;
+    const rnd = U.rng(seed);
+
+    // 시기별 금리 목표 (실제 역사를 흉내 낸 가상의 값)
+    const regimes = [
+      { until: 0.42, target: 0.5 },   // 저금리기
+      { until: 0.62, target: 2.4 },   // 정상화기
+      { until: 0.74, target: 0.2 },   // 위기 대응 인하기
+      { until: 0.90, target: 4.8 },   // 급격한 인상기
+      { until: 1.01, target: 3.6 }    // 완화 전환기
+    ];
+
+    const dates = [], close = new Float64Array(n), rate = new Float64Array(n);
+    const isPolicyDay = new Uint8Array(n);
+
+    // GARCH(1,1) 계수: ω=2.2e-6, α=0.08, β=0.90 → 장기 평균 변동성 연 16~17%
+    const OMEGA = 2.2e-6, ALPHA = 0.08, BETA = 0.90;
+    let px = 1000, r = 0.6, vol = 0.0105, prevShock = 0;
+    // 시작일: 데모는 2010-01-04(월)부터 주말을 건너뛰며 하루씩
+    let cur = new Date(Date.UTC(2010, 0, 4));
+
+    for (let i = 0; i < n; i++) {
+      // 날짜 (주말 제외)
+      while (cur.getUTCDay() === 0 || cur.getUTCDay() === 6) cur.setUTCDate(cur.getUTCDate() + 1);
+      dates.push(new Date(cur.getTime()));
+      cur.setUTCDate(cur.getUTCDate() + 1);
+
+      // 정책 발표일: 약 6주(30거래일)마다
+      const policy = (i % 30 === 12);
+      isPolicyDay[i] = policy ? 1 : 0;
+
+      // 금리: 목표를 향해 천천히 + 발표일엔 점프
+      const frac = i / n;
+      let target = regimes[regimes.length - 1].target;
+      for (let k = 0; k < regimes.length; k++) { if (frac < regimes[k].until) { target = regimes[k].target; break; } }
+      r += (target - r) * 0.004 + rnd.normal() * 0.012;
+      if (policy) r += rnd.normal() * 0.09;
+      r = Math.max(0.02, r);
+      rate[i] = r;
+
+      // 변동성 뭉침 (GARCH(1,1) 형태)
+      vol = Math.sqrt(OMEGA + ALPHA * prevShock * prevShock + BETA * vol * vol);
+      // 발표일엔 그날만 더 출렁이게 합니다 (가설 H5 확인용).
+      // 상태값 vol 자체를 키우면 발표 때마다 변동성이 계단식으로 커져 버리므로
+      // '그날의 변동성'에만 배수를 곱합니다.
+      const dayVol = policy ? vol * 1.4 : vol;
+
+      // 수익률 = 완만한 추세 + 잡음 + (선택) 숨은 신호
+      let hidden = 0;
+      if (signal > 0 && i > 60) {
+        const mom = px / close[i - 20] - 1;           // 최근 한 달 모멘텀
+        const dRate = rate[i] - rate[i - 20];         // 최근 한 달 금리 변화
+        hidden = signal * (0.35 * Math.tanh(mom * 8) - 0.45 * Math.tanh(dRate * 2)) * dayVol;
+      }
+      const shock = rnd.normal() * dayVol;
+      const ret = 0.0004 + hidden + shock;            // 연 8~10% 정도의 완만한 상승 추세
+      prevShock = shock;
+      px = px * (1 + ret);
+      close[i] = px;
+    }
+
+    return {
+      dates: dates, close: close, rate: rate, isPolicyDay: isPolicyDay,
+      meta: {
+        name: '데모(가상) 데이터',
+        source: 'demo',
+        synthetic: true,
+        priceLabel: '가상 주가지수',
+        rateLabel: '가상 정책금리(%)',
+        note: '실제 시장 데이터가 아닌, 시드를 고정해 만든 가상 시계열입니다.',
+        signal: signal
+      }
+    };
+  };
+
+  /* ==========================================================================
+   *  [2] CSV 읽기
+   *  허용 열 이름: 날짜 = Date/date/날짜/일자,  종가 = Close/Adj Close/종가/현재가
+   *               금리 = Rate/rate/금리/DGS2  (없으면 금리 없이 진행)
+   * ========================================================================*/
+  D.parseCSV = function (text, name) {
+    const lines = String(text).replace(/\r/g, '').split('\n').filter(function (l) { return l.trim().length; });
+    if (lines.length < 30) throw new Error('줄이 너무 적습니다(' + lines.length + '줄). 최소 30줄 이상 필요합니다.');
+
+    const splitLine = function (line) {
+      const out = []; let cur = '', q = false;
+      for (let i = 0; i < line.length; i++) {
+        const c = line[i];
+        if (c === '"') { q = !q; continue; }
+        if ((c === ',' || c === '\t' || c === ';') && !q) { out.push(cur); cur = ''; continue; }
+        cur += c;
+      }
+      out.push(cur);
+      return out.map(function (s) { return s.trim(); });
+    };
+
+    const head = splitLine(lines[0]).map(function (h) { return h.toLowerCase().replace(/\s+/g, ''); });
+    const find = function (cands) {
+      for (let i = 0; i < head.length; i++) if (cands.indexOf(head[i]) >= 0) return i;
+      return -1;
+    };
+    const iDate = find(['date', '날짜', '일자', 'time', 'datetime', 'index']);
+    let iClose = find(['close', 'adjclose', 'close/last', '종가', '현재가', 'price', 'sp500', 'value']);
+    const iRate = find(['rate', '금리', 'dgs2', 'dgs10', 'yield', 'interest']);
+
+    if (iDate < 0) throw new Error("날짜 열을 찾지 못했습니다. 첫 줄에 'Date' 또는 '날짜' 열이 있어야 합니다.");
+    if (iClose < 0) throw new Error("종가 열을 찾지 못했습니다. 'Close' 또는 '종가' 열이 있어야 합니다.");
+
+    const num = function (s) {
+      const v = parseFloat(String(s).replace(/[",$₩\s]/g, ''));
+      return isFinite(v) ? v : NaN;
+    };
+
+    const rows = [];
+    for (let i = 1; i < lines.length; i++) {
+      const c = splitLine(lines[i]);
+      const d = U.parseDate(c[iDate]);
+      const p = num(c[iClose]);
+      if (!d || !isFinite(p) || p <= 0) continue;
+      const rt = iRate >= 0 ? num(c[iRate]) : NaN;
+      rows.push({ d: d, p: p, r: rt });
+    }
+    if (rows.length < 30) throw new Error('쓸 수 있는 행이 ' + rows.length + '개뿐입니다. 날짜/종가 형식을 확인하세요.');
+    rows.sort(function (a, b) { return a.d - b.d; });
+
+    const dates = [], close = new Float64Array(rows.length), rate = new Float64Array(rows.length);
+    let lastRate = NaN, hasRate = false;
+    for (let i = 0; i < rows.length; i++) {
+      dates.push(rows[i].d);
+      close[i] = rows[i].p;
+      if (isFinite(rows[i].r)) { lastRate = rows[i].r; hasRate = true; }
+      rate[i] = lastRate;               // 금리는 휴일 결측 → 직전 값 유지(ffill)
+    }
+    // 앞부분 금리 결측은 첫 유효값으로 채움
+    if (hasRate) {
+      let first = NaN;
+      for (let i = 0; i < rate.length; i++) { if (isFinite(rate[i])) { first = rate[i]; break; } }
+      for (let i = 0; i < rate.length; i++) { if (!isFinite(rate[i])) rate[i] = first; else break; }
+    }
+
+    return {
+      dates: dates, close: close, rate: hasRate ? rate : null, isPolicyDay: null,
+      meta: {
+        name: name || '내 CSV 데이터',
+        source: 'csv', synthetic: false,
+        priceLabel: '종가', rateLabel: '금리(%)',
+        note: hasRate ? '' : '금리 열이 없어 금리 특징은 사용할 수 없습니다.'
+      }
+    };
+  };
+
+  /* ==========================================================================
+   *  [3] 인터넷에서 직접 받기
+   *  브라우저에서 직접 부르므로 CORS를 허용하는 곳만 됩니다.
+   *  가장 안정적인 것은 Alpha Vantage(무료 키)입니다.
+   * ========================================================================*/
+  const jget = function (url) {
+    return fetch(url).then(function (r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    });
+  };
+
+  // Alpha Vantage: 주가(TIME_SERIES_DAILY) + 금리(TREASURY_YIELD)
+  D.fetchAlphaVantage = function (symbol, key, maturity, onLog) {
+    const log = onLog || function () {};
+    const base = 'https://www.alphavantage.co/query?';
+    log('주가 내려받는 중… (' + symbol + ')');
+    return jget(base + 'function=TIME_SERIES_DAILY&outputsize=full&symbol=' + encodeURIComponent(symbol) + '&apikey=' + encodeURIComponent(key))
+      .then(function (js) {
+        if (js['Note'] || js['Information']) throw new Error('Alpha Vantage 제한/안내: ' + (js['Note'] || js['Information']));
+        if (js['Error Message']) throw new Error('종목 코드를 확인하세요: ' + js['Error Message']);
+        const ts = js['Time Series (Daily)'];
+        if (!ts) throw new Error('주가 응답 형식이 예상과 다릅니다.');
+        const rows = Object.keys(ts).sort().map(function (d) {
+          return { d: U.parseDate(d), p: parseFloat(ts[d]['4. close']) };
+        }).filter(function (r) { return r.d && isFinite(r.p); });
+        log('주가 ' + rows.length.toLocaleString('ko-KR') + '일 확보. 금리 내려받는 중…');
+        return jget(base + 'function=TREASURY_YIELD&interval=daily&maturity=' + (maturity || '2year') + '&apikey=' + encodeURIComponent(key))
+          .then(function (rj) {
+            const rd = {};
+            (rj['data'] || []).forEach(function (o) {
+              const v = parseFloat(o.value);
+              if (isFinite(v)) rd[o.date] = v;
+            });
+            return { rows: rows, rateMap: rd, hasRate: Object.keys(rd).length > 50 };
+          })
+          .catch(function () { return { rows: rows, rateMap: {}, hasRate: false }; });
+      })
+      .then(function (res) {
+        const dates = [], close = new Float64Array(res.rows.length), rate = new Float64Array(res.rows.length);
+        let last = NaN;
+        for (let i = 0; i < res.rows.length; i++) {
+          dates.push(res.rows[i].d);
+          close[i] = res.rows[i].p;
+          const key2 = U.dstr(res.rows[i].d);
+          if (res.rateMap[key2] !== undefined) last = res.rateMap[key2];
+          rate[i] = last;
+        }
+        if (res.hasRate) {
+          let first = NaN;
+          for (let i = 0; i < rate.length; i++) if (isFinite(rate[i])) { first = rate[i]; break; }
+          for (let i = 0; i < rate.length; i++) { if (!isFinite(rate[i])) rate[i] = first; else break; }
+        }
+        return {
+          dates: dates, close: close, rate: res.hasRate ? rate : null, isPolicyDay: null,
+          meta: {
+            name: symbol + ' (Alpha Vantage)', source: 'alphavantage', synthetic: false,
+            priceLabel: symbol + ' 종가', rateLabel: '미국 국채금리(%)',
+            note: res.hasRate ? '' : '금리를 받지 못해 금리 특징은 사용할 수 없습니다.'
+          }
+        };
+      });
+  };
+
+  // FRED: 주가 시리즈 + 금리 시리즈 (CORS가 막히면 실패할 수 있음)
+  D.fetchFred = function (priceSeries, rateSeries, key, start, end, onLog) {
+    const log = onLog || function () {};
+    const base = 'https://api.stlouisfed.org/fred/series/observations?file_type=json&api_key=' + encodeURIComponent(key);
+    const one = function (sid) {
+      return jget(base + '&series_id=' + encodeURIComponent(sid) +
+        '&observation_start=' + start + '&observation_end=' + end)
+        .then(function (js) {
+          const out = {};
+          (js.observations || []).forEach(function (o) {
+            const v = parseFloat(o.value);
+            if (isFinite(v)) out[o.date] = v;
+          });
+          return out;
+        });
+    };
+    log('FRED에서 ' + priceSeries + ' 내려받는 중…');
+    return one(priceSeries).then(function (pm) {
+      log('FRED에서 ' + rateSeries + ' 내려받는 중…');
+      return one(rateSeries).then(function (rm) {
+        const keys = Object.keys(pm).sort();
+        if (keys.length < 100) throw new Error('주가 관측치가 너무 적습니다(' + keys.length + '개).');
+        const dates = [], close = new Float64Array(keys.length), rate = new Float64Array(keys.length);
+        let last = NaN;
+        for (let i = 0; i < keys.length; i++) {
+          dates.push(U.parseDate(keys[i]));
+          close[i] = pm[keys[i]];
+          if (rm[keys[i]] !== undefined) last = rm[keys[i]];
+          rate[i] = last;
+        }
+        let first = NaN;
+        for (let i = 0; i < rate.length; i++) if (isFinite(rate[i])) { first = rate[i]; break; }
+        for (let i = 0; i < rate.length; i++) { if (!isFinite(rate[i])) rate[i] = first; else break; }
+        return {
+          dates: dates, close: close, rate: isFinite(first) ? rate : null, isPolicyDay: null,
+          meta: {
+            name: priceSeries + ' + ' + rateSeries + ' (FRED)', source: 'fred', synthetic: false,
+            priceLabel: priceSeries, rateLabel: rateSeries + '(%)', note: ''
+          }
+        };
+      });
+    });
+  };
+
+  // Stooq: 키가 필요 없지만 CORS 정책상 브라우저에서 막힐 수 있습니다.
+  D.fetchStooq = function (symbol) {
+    const url = 'https://stooq.com/q/d/l/?s=' + encodeURIComponent(symbol) + '&i=d';
+    return fetch(url).then(function (r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.text();
+    }).then(function (t) {
+      const data = D.parseCSV(t, symbol + ' (Stooq)');
+      data.meta.source = 'stooq';
+      return data;
+    });
+  };
+
+  /* ==========================================================================
+   *  [4] 특징 만들기 — phase1a/1b의 make_features와 동일한 정의
+   * ========================================================================*/
+  D.makeFeatures = function (data) {
+    const n = data.close.length;
+    const c = data.close, rt = data.rate;
+    const f = {};
+    const nan = function () { const a = new Float64Array(n); a.fill(NaN); return a; };
+
+    const ret = nan(), ma5 = nan(), ma20 = nan();
+    for (let i = 1; i < n; i++) ret[i] = c[i] / c[i - 1] - 1;
+    let s5 = 0, s20 = 0;
+    for (let i = 0; i < n; i++) {
+      s5 += c[i]; if (i >= 5) s5 -= c[i - 5];
+      s20 += c[i]; if (i >= 20) s20 -= c[i - 20];
+      if (i >= 4) ma5[i] = s5 / 5;
+      if (i >= 19) ma20[i] = s20 / 20;
+    }
+    f['return'] = ret;
+    f['px_vs_ma5'] = nan(); f['px_vs_ma20'] = nan(); f['ma5_vs_ma20'] = nan();
+    for (let i = 0; i < n; i++) {
+      if (isFinite(ma5[i])) f['px_vs_ma5'][i] = c[i] / ma5[i] - 1;
+      if (isFinite(ma20[i])) f['px_vs_ma20'][i] = c[i] / ma20[i] - 1;
+      if (isFinite(ma5[i]) && isFinite(ma20[i])) f['ma5_vs_ma20'][i] = ma5[i] / ma20[i] - 1;
+    }
+    // 확장 특징
+    f['vol20'] = nan(); f['mom60'] = nan();
+    for (let i = 20; i < n; i++) {
+      let m = 0; for (let k = i - 19; k <= i; k++) m += ret[k]; m /= 20;
+      let v = 0; for (let k = i - 19; k <= i; k++) v += (ret[k] - m) * (ret[k] - m);
+      f['vol20'][i] = Math.sqrt(v / 19);
+    }
+    for (let i = 60; i < n; i++) f['mom60'][i] = c[i] / c[i - 60] - 1;
+
+    // 금리 특징 (금리 '수준'이 아니라 '변화'를 씁니다)
+    if (rt) {
+      f['rate_change'] = nan(); f['rate_change_20'] = nan();
+      for (let i = 1; i < n; i++) f['rate_change'][i] = rt[i] - rt[i - 1];
+      for (let i = 20; i < n; i++) f['rate_change_20'][i] = rt[i] - rt[i - 20];
+    }
+    return f;
+  };
+
+  /* --------------------------------------------------------------------------
+   *  지도학습용 표 만들기
+   *  목표 = horizon일 뒤 종가가 오늘보다 높으면 1, 아니면 0
+   *  누수 방지: 특징은 '오늘까지'만, 마지막 horizon일은 정답이 없어 제외
+   * ------------------------------------------------------------------------*/
+  D.buildSupervised = function (data, feats, featureCols, horizon) {
+    const n = data.close.length, c = data.close;
+    const rows = [];
+    for (let i = 0; i < n; i++) {
+      if (i + horizon >= n) break;                       // 미래가 없는 마지막 구간 제거
+      let ok = isFinite(feats['return'][i]);
+      const x = new Float64Array(featureCols.length);
+      for (let j = 0; ok && j < featureCols.length; j++) {
+        const v = feats[featureCols[j]] ? feats[featureCols[j]][i] : NaN;
+        if (!isFinite(v)) { ok = false; break; }
+        x[j] = v;
+      }
+      if (!ok) continue;                                  // 워밍업 결측 제거
+      rows.push({
+        i: i, date: data.dates[i], close: c[i],
+        x: x, y: c[i + horizon] > c[i] ? 1 : 0,
+        ret: feats['return'][i]
+      });
+    }
+    const X = rows.map(function (r) { return r.x; });
+    const y = Int8Array.from(rows.map(function (r) { return r.y; }));
+    return {
+      rows: rows, X: X, y: y, n: rows.length,
+      featureCols: featureCols.slice(), horizon: horizon,
+      dates: rows.map(function (r) { return r.date; }),
+      close: Float64Array.from(rows.map(function (r) { return r.close; })),
+      ret: Float64Array.from(rows.map(function (r) { return r.ret; }))
+    };
+  };
+
+  root.D = D;
+})(window.FRSP = window.FRSP || {});
+
+</script>
+<script>
+/* ===== js/ml.js ===== */
+/* ============================================================================
+ *  ml.js — 브라우저에서 돌아가는 머신러닝 모델들
+ *
+ *  파이썬의 scikit-learn / XGBoost / 케라스를 쓸 수 없으므로 같은 아이디어를
+ *  자바스크립트로 직접 구현했습니다. 구조는 원본과 같습니다.
+ *    로지스틱 회귀   ← 가장 단순한 분류 모델(기준점)
+ *    랜덤포레스트    ← 나무 여러 그루의 다수결 (배깅)
+ *    그래디언트부스팅 ← 틀린 것을 다음 나무가 보완 (XGBoost와 같은 계열)
+ *    신경망(MLP)     ← 딥러닝 계열. 브라우저에서 LSTM은 무거워 MLP로 대신합니다.
+ *  그리고 비교용 기준선: 항상 상승 / 모멘텀 규칙 / 무작위
+ *
+ *  공통 규칙
+ *   - 학습은 항상 '과거 구간'만 보고, 예측은 '그 뒤 구간'에 합니다(누수 방지).
+ *   - 클래스 가중치를 켜면 소수 클래스에 가중치를 줘서 다수결 흉내를 막습니다.
+ *   - 시드를 고정해 같은 설정이면 같은 결과가 나옵니다.
+ * ==========================================================================*/
+(function (root) {
+  'use strict';
+  const U = root.U;
+  const ML = {};
+
+  ML.MODELS = [
+    { id: 'logistic', name: '로지스틱 회귀', kind: 'ai', desc: '선형 모델. 빠르고 해석이 쉬움' },
+    { id: 'forest', name: '랜덤포레스트', kind: 'ai', desc: '결정나무 여러 그루의 평균(배깅)' },
+    { id: 'boosting', name: '그래디언트부스팅', kind: 'ai', desc: 'XGBoost 계열. 오차를 순차적으로 보완' },
+    { id: 'mlp', name: '신경망(MLP)', kind: 'ai', desc: '딥러닝 계열. 은닉층 1개' },
+    { id: 'momentum', name: '모멘텀 규칙', kind: 'rule', desc: '5일평균>20일평균이면 상승 (AI 아님)' },
+    { id: 'alwaysup', name: '항상 상승', kind: 'rule', desc: '무조건 오른다고 찍는 기준선' },
+    { id: 'random', name: '무작위', kind: 'rule', desc: '동전 던지기 (시드 고정)' }
+  ];
+  ML.modelName = function (id) {
+    for (let i = 0; i < ML.MODELS.length; i++) if (ML.MODELS[i].id === id) return ML.MODELS[i].name;
+    return id;
+  };
+
+  /* ------------------------------------------------------------------------
+   *  표준화 (평균 0, 표준편차 1) — 학습 구간의 통계만 사용
+   * ----------------------------------------------------------------------*/
+  function Scaler() { this.mu = null; this.sd = null; }
+  Scaler.prototype.fit = function (X) {
+    const p = X[0].length, n = X.length;
+    this.mu = new Float64Array(p); this.sd = new Float64Array(p);
+    for (let j = 0; j < p; j++) {
+      let s = 0; for (let i = 0; i < n; i++) s += X[i][j];
+      const m = s / n; let v = 0;
+      for (let i = 0; i < n; i++) { const d = X[i][j] - m; v += d * d; }
+      this.mu[j] = m; this.sd[j] = Math.sqrt(v / n) || 1e-9;
+    }
+    return this;
+  };
+  Scaler.prototype.transform = function (X) {
+    const p = this.mu.length;
+    return X.map(function (row) {
+      const o = new Float64Array(p);
+      for (let j = 0; j < p; j++) o[j] = (row[j] - this.mu[j]) / this.sd[j];
+      return o;
+    }, this);
+  };
+
+  // 클래스 가중치: 소수 클래스에 더 큰 무게
+  function classWeights(y, use) {
+    let pos = 0;
+    for (let i = 0; i < y.length; i++) pos += y[i];
+    const neg = y.length - pos;
+    if (!use || pos === 0 || neg === 0) return { w1: 1, w0: 1 };
+    return { w1: y.length / (2 * pos), w0: y.length / (2 * neg) };
+  }
+
+  const sigmoid = function (z) { return 1 / (1 + Math.exp(-U.clamp(z, -35, 35))); };
+
+  /* ========================================================================
+   *  구간 나누기(binning) — 나무 모델을 빠르게 만들기 위한 준비
+   *  각 특징을 32개 구간으로 쪼개 두면 분할 지점을 아주 빨리 찾을 수 있습니다.
+   *  (LightGBM이 쓰는 히스토그램 방식과 같은 아이디어)
+   * ======================================================================*/
+  const NBINS = 32;
+  function makeBins(X) {
+    const n = X.length, p = X[0].length;
+    const th = [];
+    for (let j = 0; j < p; j++) {
+      const col = new Float64Array(n);
+      for (let i = 0; i < n; i++) col[i] = X[i][j];
+      col.sort();
+      const t = new Float64Array(NBINS - 1);
+      for (let b = 1; b < NBINS; b++) {
+        const pos = (n - 1) * b / NBINS;
+        const lo = Math.floor(pos), hi = Math.ceil(pos);
+        t[b - 1] = col[lo] + (col[hi] - col[lo]) * (pos - lo);
+      }
+      th.push(t);
+    }
+    return th;
+  }
+  function binize(X, th) {
+    const n = X.length, p = th.length;
+    const B = new Uint8Array(n * p);
+    for (let i = 0; i < n; i++) {
+      for (let j = 0; j < p; j++) {
+        const v = X[i][j], t = th[j];
+        let lo = 0, hi = t.length;
+        while (lo < hi) { const mid = (lo + hi) >> 1; if (v > t[mid]) lo = mid + 1; else hi = mid; }
+        B[i * p + j] = lo;
+      }
+    }
+    return B;
+  }
+
+  /* ------------------------------------------------------------------------
+   *  분류용 결정나무 (랜덤포레스트의 한 그루)
+   *  지니 불순도를 가장 많이 줄이는 지점에서 가지를 나눕니다.
+   * ----------------------------------------------------------------------*/
+  function fitClassTree(B, p, y, idx, w1, w0, maxDepth, minLeaf, mtry, rnd, gainAcc) {
+    const feat = [], thr = [], left = [], right = [], val = [];
+    function newNode() { feat.push(-1); thr.push(0); left.push(-1); right.push(-1); val.push(0); return feat.length - 1; }
+
+    function wsum(ids) {
+      let sw = 0, sp = 0;
+      for (let k = 0; k < ids.length; k++) { const w = y[ids[k]] ? w1 : w0; sw += w; sp += y[ids[k]] ? w : 0; }
+      return [sw, sp];
+    }
+    function gini(sw, sp) { if (sw <= 0) return 0; const q = sp / sw; return 1 - q * q - (1 - q) * (1 - q); }
+
+    function build(ids, depth) {
+      const node = newNode();
+      const s = wsum(ids);
+      val[node] = s[0] > 0 ? s[1] / s[0] : 0.5;
+      if (depth >= maxDepth || ids.length < 2 * minLeaf || s[1] === 0 || s[1] === s[0]) return node;
+
+      const parentImp = gini(s[0], s[1]) * s[0];
+      let best = null;
+      // 특징 일부만 후보로 (랜덤포레스트의 핵심: 나무마다 다르게 보게 함)
+      const order = U.range(p);
+      for (let i = p - 1; i > 0; i--) { const j = rnd.int(i + 1); const t = order[i]; order[i] = order[j]; order[j] = t; }
+      const cand = order.slice(0, mtry);
+
+      const hw = new Float64Array(NBINS), hp = new Float64Array(NBINS), hc = new Float64Array(NBINS);
+      for (let ci = 0; ci < cand.length; ci++) {
+        const j = cand[ci];
+        hw.fill(0); hp.fill(0); hc.fill(0);
+        for (let k = 0; k < ids.length; k++) {
+          const i = ids[k], b = B[i * p + j], w = y[i] ? w1 : w0;
+          hw[b] += w; hp[b] += y[i] ? w : 0; hc[b] += 1;
+        }
+        let cw = 0, cp = 0, cc = 0;
+        for (let b = 0; b < NBINS - 1; b++) {
+          cw += hw[b]; cp += hp[b]; cc += hc[b];
+          if (cc < minLeaf || ids.length - cc < minLeaf) continue;
+          const rw = s[0] - cw, rp = s[1] - cp;
+          const g = parentImp - (gini(cw, cp) * cw + gini(rw, rp) * rw);
+          if (g > 1e-12 && (!best || g > best.gain)) best = { gain: g, feat: j, bin: b };
+        }
+      }
+      if (!best) return node;
+
+      const L = [], R = [];
+      for (let k = 0; k < ids.length; k++) {
+        const i = ids[k];
+        if (B[i * p + best.feat] <= best.bin) L.push(i); else R.push(i);
+      }
+      if (!L.length || !R.length) return node;
+      if (gainAcc) gainAcc[best.feat] += best.gain;
+      feat[node] = best.feat; thr[node] = best.bin;
+      left[node] = build(L, depth + 1);
+      right[node] = build(R, depth + 1);
+      return node;
+    }
+    build(idx, 0);
+    return { feat: feat, thr: thr, left: left, right: right, val: val };
+  }
+
+  /* ------------------------------------------------------------------------
+   *  회귀용 나무 (그래디언트부스팅의 한 그루)
+   *  gradient/hessian 합으로 이득을 계산하는 XGBoost 방식
+   * ----------------------------------------------------------------------*/
+  function fitGradTree(B, p, g, h, idx, maxDepth, minLeaf, lambda, colRate, rnd, gainAcc) {
+    const feat = [], thr = [], left = [], right = [], val = [];
+    function newNode() { feat.push(-1); thr.push(0); left.push(-1); right.push(-1); val.push(0); return feat.length - 1; }
+    function sums(ids) {
+      let G = 0, H = 0;
+      for (let k = 0; k < ids.length; k++) { G += g[ids[k]]; H += h[ids[k]]; }
+      return [G, H];
+    }
+    function score(G, H) { return (G * G) / (H + lambda); }
+
+    function build(ids, depth) {
+      const node = newNode();
+      const s = sums(ids);
+      val[node] = -s[0] / (s[1] + lambda);
+      if (depth >= maxDepth || ids.length < 2 * minLeaf) return node;
+      const parent = score(s[0], s[1]);
+      let best = null;
+      const order = U.range(p);
+      for (let i = p - 1; i > 0; i--) { const j = rnd.int(i + 1); const t = order[i]; order[i] = order[j]; order[j] = t; }
+      const mtry = Math.max(1, Math.round(p * colRate));
+      const cand = order.slice(0, mtry);
+      const hg = new Float64Array(NBINS), hh = new Float64Array(NBINS), hc = new Float64Array(NBINS);
+      for (let ci = 0; ci < cand.length; ci++) {
+        const j = cand[ci];
+        hg.fill(0); hh.fill(0); hc.fill(0);
+        for (let k = 0; k < ids.length; k++) {
+          const i = ids[k], b = B[i * p + j];
+          hg[b] += g[i]; hh[b] += h[i]; hc[b] += 1;
+        }
+        let cg = 0, ch = 0, cc = 0;
+        for (let b = 0; b < NBINS - 1; b++) {
+          cg += hg[b]; ch += hh[b]; cc += hc[b];
+          if (cc < minLeaf || ids.length - cc < minLeaf) continue;
+          const gain = score(cg, ch) + score(s[0] - cg, s[1] - ch) - parent;
+          if (gain > 1e-9 && (!best || gain > best.gain)) best = { gain: gain, feat: j, bin: b };
+        }
+      }
+      if (!best) return node;
+      const L = [], R = [];
+      for (let k = 0; k < ids.length; k++) {
+        const i = ids[k];
+        if (B[i * p + best.feat] <= best.bin) L.push(i); else R.push(i);
+      }
+      if (!L.length || !R.length) return node;
+      if (gainAcc) gainAcc[best.feat] += best.gain;
+      feat[node] = best.feat; thr[node] = best.bin;
+      left[node] = build(L, depth + 1);
+      right[node] = build(R, depth + 1);
+      return node;
+    }
+    build(idx, 0);
+    return { feat: feat, thr: thr, left: left, right: right, val: val };
+  }
+
+  function treePredict(tree, B, p, i) {
+    let node = 0;
+    while (tree.feat[node] >= 0) {
+      node = (B[i * p + tree.feat[node]] <= tree.thr[node]) ? tree.left[node] : tree.right[node];
+    }
+    return tree.val[node];
+  }
+
+  /* ========================================================================
+   *  모델들
+   * ======================================================================*/
+
+  // --- 로지스틱 회귀 --------------------------------------------------------
+  function Logistic(opt) {
+    this.opt = Object.assign({ lr: 0.5, iters: 400, l2: 1e-3, classWeight: true }, opt);
+  }
+  Logistic.prototype.fit = function (X, y) {
+    this.sc = new Scaler().fit(X);
+    const Z = this.sc.transform(X), n = Z.length, p = Z[0].length;
+    const cw = classWeights(y, this.opt.classWeight);
+    const w = new Float64Array(p); let b = 0;
+    const mw = new Float64Array(p); let mb = 0;
+    const o = this.opt;
+    for (let it = 0; it < o.iters; it++) {
+      const gw = new Float64Array(p); let gb = 0, wsum = 0;
+      for (let i = 0; i < n; i++) {
+        let z = b;
+        for (let j = 0; j < p; j++) z += w[j] * Z[i][j];
+        const pr = sigmoid(z);
+        const cwi = y[i] ? cw.w1 : cw.w0;
+        const e = (pr - y[i]) * cwi;
+        for (let j = 0; j < p; j++) gw[j] += e * Z[i][j];
+        gb += e; wsum += cwi;
+      }
+      for (let j = 0; j < p; j++) {
+        const grad = gw[j] / wsum + o.l2 * w[j];
+        mw[j] = 0.9 * mw[j] - o.lr * grad;      // 모멘텀 경사하강
+        w[j] += mw[j];
+      }
+      mb = 0.9 * mb - o.lr * (gb / wsum); b += mb;
+    }
+    this.w = w; this.b = b;
+    return this;
+  };
+  Logistic.prototype.predictProba = function (X) {
+    const Z = this.sc.transform(X), out = new Float64Array(Z.length);
+    for (let i = 0; i < Z.length; i++) {
+      let z = this.b;
+      for (let j = 0; j < this.w.length; j++) z += this.w[j] * Z[i][j];
+      out[i] = sigmoid(z);
+    }
+    return out;
+  };
+  Logistic.prototype.importance = function () {
+    const a = Array.prototype.map.call(this.w, Math.abs);
+    const s = U.sum(a) || 1;
+    return a.map(function (v) { return v / s; });
+  };
+
+  // --- 랜덤포레스트 ---------------------------------------------------------
+  function Forest(opt) {
+    this.opt = Object.assign({ trees: 60, maxDepth: 5, minLeaf: 20, seed: 42, classWeight: true, sampleRate: 0.8 }, opt);
+  }
+  Forest.prototype.fit = function (X, y) {
+    const o = this.opt, n = X.length, p = X[0].length;
+    const rnd = U.rng(o.seed);
+    this.th = makeBins(X);
+    const B = binize(X, this.th);
+    const cw = classWeights(y, o.classWeight);
+    const mtry = Math.max(1, Math.round(Math.sqrt(p) + 0.5));
+    this.gain = new Float64Array(p);
+    this.trees = [];
+    const m = Math.max(50, Math.round(n * o.sampleRate));
+    for (let t = 0; t < o.trees; t++) {
+      const ids = new Array(m);
+      for (let k = 0; k < m; k++) ids[k] = rnd.int(n);      // 부트스트랩 표본
+      this.trees.push(fitClassTree(B, p, y, ids, cw.w1, cw.w0, o.maxDepth, o.minLeaf, mtry, rnd, this.gain));
+    }
+    this.p = p;
+    return this;
+  };
+  Forest.prototype.predictProba = function (X) {
+    const B = binize(X, this.th), out = new Float64Array(X.length);
+    for (let i = 0; i < X.length; i++) {
+      let s = 0;
+      for (let t = 0; t < this.trees.length; t++) s += treePredict(this.trees[t], B, this.p, i);
+      out[i] = s / this.trees.length;
+    }
+    return out;
+  };
+  Forest.prototype.importance = function () {
+    const a = Array.from(this.gain), s = U.sum(a) || 1;
+    return a.map(function (v) { return v / s; });
+  };
+
+  // --- 그래디언트 부스팅 ----------------------------------------------------
+  function Boosting(opt) {
+    this.opt = Object.assign({ trees: 120, lr: 0.06, maxDepth: 3, minLeaf: 20, lambda: 1.0, colRate: 0.9, subsample: 0.9, seed: 42, classWeight: true }, opt);
+  }
+  Boosting.prototype.fit = function (X, y) {
+    const o = this.opt, n = X.length, p = X[0].length;
+    const rnd = U.rng(o.seed);
+    this.th = makeBins(X);
+    const B = binize(X, this.th);
+    const cw = classWeights(y, o.classWeight);
+    let pos = 0; for (let i = 0; i < n; i++) pos += y[i];
+    const base = Math.log((pos + 1) / (n - pos + 1));
+    const F = new Float64Array(n); F.fill(base);
+    const g = new Float64Array(n), h = new Float64Array(n);
+    this.gain = new Float64Array(p);
+    this.trees = [];
+    for (let t = 0; t < o.trees; t++) {
+      for (let i = 0; i < n; i++) {
+        const pr = sigmoid(F[i]);
+        const w = y[i] ? cw.w1 : cw.w0;
+        g[i] = w * (pr - y[i]);
+        h[i] = w * Math.max(pr * (1 - pr), 1e-6);
+      }
+      const ids = [];
+      for (let i = 0; i < n; i++) if (rnd() < o.subsample) ids.push(i);
+      if (ids.length < 40) for (let i = 0; i < n; i++) ids.push(i);
+      const tree = fitGradTree(B, p, g, h, ids, o.maxDepth, o.minLeaf, o.lambda, o.colRate, rnd, this.gain);
+      for (let i = 0; i < n; i++) F[i] += o.lr * treePredict(tree, B, p, i);
+      this.trees.push(tree);
+    }
+    this.base = base; this.p = p;
+    return this;
+  };
+  Boosting.prototype.predictProba = function (X) {
+    const B = binize(X, this.th), out = new Float64Array(X.length);
+    for (let i = 0; i < X.length; i++) {
+      let f = this.base;
+      for (let t = 0; t < this.trees.length; t++) f += this.opt.lr * treePredict(this.trees[t], B, this.p, i);
+      out[i] = sigmoid(f);
+    }
+    return out;
+  };
+  Boosting.prototype.importance = Forest.prototype.importance;
+
+  // --- 신경망(MLP) ----------------------------------------------------------
+  function MLP(opt) {
+    this.opt = Object.assign({ hidden: 8, epochs: 120, lr: 0.05, l2: 1e-4, seed: 42, classWeight: true, batch: 64 }, opt);
+  }
+  MLP.prototype.fit = function (X, y) {
+    const o = this.opt;
+    this.sc = new Scaler().fit(X);
+    const Z = this.sc.transform(X), n = Z.length, p = Z[0].length, H = o.hidden;
+    const rnd = U.rng(o.seed);
+    const cw = classWeights(y, o.classWeight);
+    const W1 = new Float64Array(p * H), b1 = new Float64Array(H);
+    const W2 = new Float64Array(H); let b2 = 0;
+    const s1 = Math.sqrt(2 / (p + H)), s2 = Math.sqrt(2 / (H + 1));
+    for (let k = 0; k < W1.length; k++) W1[k] = rnd.normal() * s1;
+    for (let k = 0; k < H; k++) W2[k] = rnd.normal() * s2;
+
+    // Adam
+    const mW1 = new Float64Array(p * H), vW1 = new Float64Array(p * H);
+    const mb1 = new Float64Array(H), vb1 = new Float64Array(H);
+    const mW2 = new Float64Array(H), vW2 = new Float64Array(H);
+    let mb2 = 0, vb2 = 0, step = 0;
+    const b1_ = 0.9, b2_ = 0.999, eps = 1e-8;
+
+    const idx = U.range(n);
+    const hbuf = new Float64Array(H);
+    for (let ep = 0; ep < o.epochs; ep++) {
+      for (let i = n - 1; i > 0; i--) { const j = rnd.int(i + 1); const t = idx[i]; idx[i] = idx[j]; idx[j] = t; }
+      for (let start = 0; start < n; start += o.batch) {
+        const end = Math.min(n, start + o.batch), m = end - start;
+        const gW1 = new Float64Array(p * H), gb1 = new Float64Array(H);
+        const gW2 = new Float64Array(H); let gb2 = 0, wtot = 0;
+        for (let k = start; k < end; k++) {
+          const i = idx[k], row = Z[i];
+          for (let q = 0; q < H; q++) {
+            let z = b1[q];
+            for (let j = 0; j < p; j++) z += W1[j * H + q] * row[j];
+            hbuf[q] = Math.tanh(z);
+          }
+          let z2 = b2;
+          for (let q = 0; q < H; q++) z2 += W2[q] * hbuf[q];
+          const pr = sigmoid(z2);
+          const w = y[i] ? cw.w1 : cw.w0;
+          const d2 = (pr - y[i]) * w;
+          wtot += w;
+          for (let q = 0; q < H; q++) {
+            gW2[q] += d2 * hbuf[q];
+            const d1 = d2 * W2[q] * (1 - hbuf[q] * hbuf[q]);
+            gb1[q] += d1;
+            for (let j = 0; j < p; j++) gW1[j * H + q] += d1 * row[j];
+          }
+          gb2 += d2;
+        }
+        const scale = 1 / Math.max(wtot, 1e-9);
+        step++;
+        const bc1 = 1 - Math.pow(b1_, step), bc2 = 1 - Math.pow(b2_, step);
+        const upd = function (W, g, mArr, vArr, k, gval) {
+          mArr[k] = b1_ * mArr[k] + (1 - b1_) * gval;
+          vArr[k] = b2_ * vArr[k] + (1 - b2_) * gval * gval;
+          W[k] -= o.lr * (mArr[k] / bc1) / (Math.sqrt(vArr[k] / bc2) + eps);
+        };
+        for (let k = 0; k < W1.length; k++) upd(W1, gW1, mW1, vW1, k, gW1[k] * scale + o.l2 * W1[k]);
+        for (let k = 0; k < H; k++) upd(b1, gb1, mb1, vb1, k, gb1[k] * scale);
+        for (let k = 0; k < H; k++) upd(W2, gW2, mW2, vW2, k, gW2[k] * scale + o.l2 * W2[k]);
+        mb2 = b1_ * mb2 + (1 - b1_) * (gb2 * scale);
+        vb2 = b2_ * vb2 + (1 - b2_) * Math.pow(gb2 * scale, 2);
+        b2 -= o.lr * (mb2 / bc1) / (Math.sqrt(vb2 / bc2) + eps);
+      }
+    }
+    this.W1 = W1; this.b1 = b1; this.W2 = W2; this.b2 = b2; this.H = H; this.p = p;
+    return this;
+  };
+  MLP.prototype.predictProba = function (X) {
+    const Z = this.sc.transform(X), out = new Float64Array(Z.length), H = this.H, p = this.p;
+    for (let i = 0; i < Z.length; i++) {
+      let z2 = this.b2;
+      for (let q = 0; q < H; q++) {
+        let z = this.b1[q];
+        for (let j = 0; j < p; j++) z += this.W1[j * H + q] * Z[i][j];
+        z2 += this.W2[q] * Math.tanh(z);
+      }
+      out[i] = sigmoid(z2);
+    }
+    return out;
+  };
+  MLP.prototype.importance = function () {
+    // 입력→은닉 가중치 크기 × 은닉→출력 가중치 크기 (대략적인 기여도)
+    const p = this.p, H = this.H, a = new Array(p).fill(0);
+    for (let j = 0; j < p; j++) {
+      for (let q = 0; q < H; q++) a[j] += Math.abs(this.W1[j * H + q] * this.W2[q]);
+    }
+    const s = U.sum(a) || 1;
+    return a.map(function (v) { return v / s; });
+  };
+
+  // --- 규칙 기반 기준선 -----------------------------------------------------
+  function RuleModel(kind, opt) {
+    this.kind = kind;
+    this.opt = opt || {};
+    this.rnd = U.rng(this.opt.seed || 42);
+  }
+  RuleModel.prototype.fit = function () { return this; };
+  RuleModel.prototype.predictProba = function (X) {
+    const out = new Float64Array(X.length);
+    const mi = this.opt.momentumIndex === undefined ? -1 : this.opt.momentumIndex;
+    for (let i = 0; i < X.length; i++) {
+      if (this.kind === 'alwaysup') out[i] = 1;
+      else if (this.kind === 'random') out[i] = this.rnd();
+      else out[i] = (mi >= 0 ? (X[i][mi] > 0 ? 0.75 : 0.25) : 0.5);
+    }
+    return out;
+  };
+  RuleModel.prototype.importance = function () { return null; };
+
+  /* ------------------------------------------------------------------------
+   *  모델 만들기
+   *  featureCols는 모멘텀 규칙이 어느 열을 봐야 하는지 알려주는 데 씁니다.
+   * ----------------------------------------------------------------------*/
+  ML.create = function (id, opt) {
+    opt = opt || {};
+    const fc = opt.featureCols || [];
+    switch (id) {
+      case 'logistic': return new Logistic(opt);
+      case 'forest': return new Forest(opt);
+      case 'boosting': return new Boosting(opt);
+      case 'mlp': return new MLP(opt);
+      case 'momentum': return new RuleModel('momentum', Object.assign({ momentumIndex: fc.indexOf('ma5_vs_ma20') }, opt));
+      case 'alwaysup': return new RuleModel('alwaysup', opt);
+      case 'random': return new RuleModel('random', opt);
+      default: throw new Error('알 수 없는 모델: ' + id);
+    }
+  };
+  ML.isRule = function (id) { return ['momentum', 'alwaysup', 'random'].indexOf(id) >= 0; };
+
+  root.ML = ML;
+})(window.FRSP = window.FRSP || {});
+
+</script>
+<script>
+/* ===== js/metrics.js ===== */
+/* ============================================================================
+ *  metrics.js — 성적표 계산
+ *   분류 지표(정확도·정밀도·재현율·F1·AUC·MCC·혼동행렬·기준선·p값)
+ *   투자 성과 지표(누적수익·연평균·샤프·최대낙폭)
+ *   변동성 모델(EWMA, GARCH(1,1)) — Phase 1-c에 대응
+ *
+ *  ★ 정확도 하나만 보면 속습니다. 상승일이 많은 구간에서는 "무조건 상승"만
+ *    찍어도 정확도가 높게 나옵니다. 그래서 AUC와 '상승예측비율'을 함께 봅니다.
+ * ==========================================================================*/
+(function (root) {
+  'use strict';
+  const U = root.U;
+  const M = {};
+
+  /* --------------------------------------------------------------------------
+   *  AUC — 오를 날과 내릴 날을 얼마나 잘 '구별'하는지 (0.5면 실력 없음)
+   *  순위 기반(Mann-Whitney) 계산: 동점은 평균 순위로 처리
+   * ------------------------------------------------------------------------*/
+  M.auc = function (y, score) {
+    const n = y.length;
+    const idx = U.range(n).sort(function (a, b) { return score[a] - score[b]; });
+    const rank = new Float64Array(n);
+    let i = 0;
+    while (i < n) {
+      let j = i;
+      while (j + 1 < n && score[idx[j + 1]] === score[idx[i]]) j++;
+      const r = (i + j) / 2 + 1;
+      for (let k = i; k <= j; k++) rank[idx[k]] = r;
+      i = j + 1;
+    }
+    let pos = 0, sumRankPos = 0;
+    for (let k = 0; k < n; k++) if (y[k] === 1) { pos++; sumRankPos += rank[k]; }
+    const neg = n - pos;
+    if (pos === 0 || neg === 0) return NaN;
+    return (sumRankPos - pos * (pos + 1) / 2) / (pos * neg);
+  };
+
+  M.rocCurve = function (y, score) {
+    const n = y.length;
+    const idx = U.range(n).sort(function (a, b) { return score[b] - score[a]; });
+    let pos = 0; for (let k = 0; k < n; k++) pos += y[k];
+    const neg = n - pos;
+    const pts = [{ x: 0, y: 0 }];
+    let tp = 0, fp = 0;
+    for (let k = 0; k < n; k++) {
+      if (y[idx[k]] === 1) tp++; else fp++;
+      if (k === n - 1 || score[idx[k]] !== score[idx[k + 1]]) {
+        pts.push({ x: neg ? fp / neg : 0, y: pos ? tp / pos : 0 });
+      }
+    }
+    return pts;
+  };
+
+  /* --------------------------------------------------------------------------
+   *  분류 성적표
+   *  baseline(기준선) = 시험 구간에서 많은 쪽 클래스의 비율.
+   *  "이 점수를 넘지 못하면 모델은 아무 값어치가 없다"는 뜻의 기준입니다.
+   * ------------------------------------------------------------------------*/
+  M.classify = function (y, proba, threshold) {
+    const th = (threshold === undefined) ? 0.5 : threshold;
+    const n = y.length;
+    let tp = 0, fp = 0, tn = 0, fn = 0, up = 0, posTrue = 0;
+    for (let i = 0; i < n; i++) {
+      const pred = proba[i] >= th ? 1 : 0;
+      up += pred; posTrue += y[i];
+      if (pred === 1 && y[i] === 1) tp++;
+      else if (pred === 1 && y[i] === 0) fp++;
+      else if (pred === 0 && y[i] === 0) tn++;
+      else fn++;
+    }
+    const acc = (tp + tn) / n;
+    const posRate = posTrue / n;
+    const baseline = Math.max(posRate, 1 - posRate);
+    const precision = (tp + fp) ? tp / (tp + fp) : NaN;
+    const recall = (tp + fn) ? tp / (tp + fn) : NaN;
+    const f1 = (isFinite(precision) && isFinite(recall) && precision + recall > 0)
+      ? 2 * precision * recall / (precision + recall) : NaN;
+    const spec = (tn + fp) ? tn / (tn + fp) : NaN;
+    const balAcc = (isFinite(recall) && isFinite(spec)) ? (recall + spec) / 2 : NaN;
+    const den = Math.sqrt((tp + fp) * (tp + fn) * (tn + fp) * (tn + fn));
+    const mcc = den > 0 ? (tp * tn - fp * fn) / den : NaN;
+    const auc = M.auc(y, proba);
+
+    return {
+      n: n, acc: acc, baseline: baseline, edge: acc - baseline,
+      precision: precision, recall: recall, f1: f1,
+      auc: auc, mcc: mcc, balAcc: balAcc,
+      upRate: up / n, posRate: posRate,
+      tp: tp, fp: fp, tn: tn, fn: fn,
+      pVsBaseline: U.binomP(tp + tn, n, baseline),
+      warnings: M.warnings({ upRate: up / n, auc: auc, acc: acc, baseline: baseline })
+    };
+  };
+
+  // 결과를 잘못 읽지 않도록 자동으로 붙는 경고 (파이썬 코드와 같은 규칙)
+  M.warnings = function (m) {
+    const w = [];
+    if (m.upRate >= 0.9) w.push('모델이 예측의 ' + U.pct(m.upRate, 0) + '를 "상승"으로 찍고 있습니다. 예측이 아니라 다수결 흉내일 가능성이 큽니다.');
+    if (m.upRate <= 0.1) w.push('모델이 예측의 ' + U.pct(1 - m.upRate, 0) + '를 "하락"으로 찍고 있습니다. 한쪽으로 쏠려 있습니다.');
+    if (isFinite(m.auc) && Math.abs(m.auc - 0.5) < 0.02) w.push('AUC가 0.5 근처입니다. 오를 날과 내릴 날을 구별하지 못하고 있습니다.');
+    if (m.acc - m.baseline <= 0) w.push('정확도가 기준선을 넘지 못했습니다. 모델이 기준선보다 낫다고 말할 수 없습니다.');
+    if (isFinite(m.auc) && m.auc > 0.75) w.push('AUC가 비정상적으로 높습니다. 데이터 누수(미래 정보 유입)를 의심하세요.');
+    return w;
+  };
+
+  /* --------------------------------------------------------------------------
+   *  투자 성과 지표 — phase1b_backtest.py의 perf_metrics와 같은 정의
+   * ------------------------------------------------------------------------*/
+  M.TRADING_DAYS = 252;
+  M.perf = function (r) {
+    const n = r.length;
+    if (!n) return { total: NaN, cagr: NaN, sharpe: NaN, mdd: NaN, cum: [] };
+    const cum = new Float64Array(n);
+    let c = 1;
+    for (let i = 0; i < n; i++) { c *= (1 + r[i]); cum[i] = c; }
+    const years = n / M.TRADING_DAYS;
+    const mu = U.mean(r), sd = U.std(r);
+    let peak = -Infinity, mdd = 0;
+    for (let i = 0; i < n; i++) { if (cum[i] > peak) peak = cum[i]; const dd = cum[i] / peak - 1; if (dd < mdd) mdd = dd; }
+    let winDays = 0, activeDays = 0;
+    for (let i = 0; i < n; i++) { if (r[i] !== 0) { activeDays++; if (r[i] > 0) winDays++; } }
+    return {
+      total: cum[n - 1] - 1,
+      cagr: years > 0 ? Math.pow(cum[n - 1], 1 / years) - 1 : NaN,
+      sharpe: sd > 0 ? (mu / sd) * Math.sqrt(M.TRADING_DAYS) : NaN,
+      mdd: mdd, cum: cum, winRate: activeDays ? winDays / activeDays : NaN,
+      years: years
+    };
+  };
+
+  /* --------------------------------------------------------------------------
+   *  변동성 — Phase 1-c 대응
+   *  EWMA: 최근 값에 더 큰 무게를 주는 단순한 변동성 추정 (RiskMetrics λ=0.94)
+   *  GARCH(1,1): σ²ₜ = ω + α·e²ₜ₋₁ + β·σ²ₜ₋₁
+   *              분산 타게팅(ω = var·(1-α-β))으로 두고 α, β만 격자 탐색으로 찾습니다.
+   * ------------------------------------------------------------------------*/
+  M.ewma = function (ret, lambda) {
+    const lam = lambda || 0.94, n = ret.length;
+    const out = new Float64Array(n);
+    let v = Math.pow(U.std(ret), 2);
+    for (let i = 0; i < n; i++) { v = lam * v + (1 - lam) * ret[i] * ret[i]; out[i] = Math.sqrt(v); }
+    return out;
+  };
+
+  M.garch = function (ret) {
+    const n = ret.length;
+    const mu = U.mean(ret);
+    const e = new Float64Array(n);
+    for (let i = 0; i < n; i++) e[i] = ret[i] - mu;
+    const uncond = Math.pow(U.std(e), 2);
+
+    const nll = function (alpha, beta) {
+      const omega = uncond * (1 - alpha - beta);
+      if (omega <= 0) return Infinity;
+      let v = uncond, s = 0;
+      for (let i = 0; i < n; i++) {
+        if (i > 0) v = omega + alpha * e[i - 1] * e[i - 1] + beta * v;
+        if (v <= 0) return Infinity;
+        s += Math.log(v) + (e[i] * e[i]) / v;
+      }
+      return 0.5 * s;
+    };
+
+    // 성긴 격자 → 촘촘한 격자 (좌표하강 대신 단순하고 안정적인 2단계 탐색)
+    let best = { a: 0.08, b: 0.9, nll: Infinity };
+    for (let a = 0.01; a <= 0.30001; a += 0.01) {
+      for (let b = 0.50; b <= 0.98001; b += 0.02) {
+        if (a + b >= 0.999) continue;
+        const v = nll(a, b);
+        if (v < best.nll) best = { a: a, b: b, nll: v };
+      }
+    }
+    for (let a = Math.max(0.005, best.a - 0.01); a <= best.a + 0.01001; a += 0.002) {
+      for (let b = Math.max(0.4, best.b - 0.02); b <= best.b + 0.02001; b += 0.004) {
+        if (a + b >= 0.999) continue;
+        const v = nll(a, b);
+        if (v < best.nll) best = { a: a, b: b, nll: v };
+      }
+    }
+    const omega = uncond * (1 - best.a - best.b);
+    const sigma = new Float64Array(n);
+    let v = uncond;
+    for (let i = 0; i < n; i++) {
+      if (i > 0) v = omega + best.a * e[i - 1] * e[i - 1] + best.b * v;
+      sigma[i] = Math.sqrt(v);
+    }
+    return {
+      omega: omega, alpha: best.a, beta: best.b, mu: mu,
+      persistence: best.a + best.b,
+      longRunVol: Math.sqrt(uncond),
+      sigma: sigma, logLik: -best.nll
+    };
+  };
+
+  // 변동성 예측 평가 지표 (정확도 대신 씁니다. 둘 다 낮을수록 좋음)
+  M.volScores = function (sigma, ret) {
+    let mse = 0, qlike = 0, k = 0;
+    for (let i = 1; i < ret.length; i++) {
+      const real = ret[i] * ret[i], v = sigma[i] * sigma[i];
+      if (v <= 0) continue;
+      mse += Math.pow(v - real, 2);
+      qlike += Math.log(v) + real / v;
+      k++;
+    }
+    return { mse: k ? mse / k : NaN, qlike: k ? qlike / k : NaN };
+  };
+
+  root.M = M;
+})(window.FRSP = window.FRSP || {});
+
+</script>
+<script>
+/* ===== js/charts.js ===== */
+/* ============================================================================
+ *  charts.js — 그래프 그리기 (외부 라이브러리 없이 캔버스로 직접)
+ *   - 선 그래프(여러 계열 + 십자선 툴팁)
+ *   - 막대 그래프
+ *   - ROC 곡선
+ *   - 히스토그램
+ *  색·눈금선 색은 CSS 변수에서 읽어 오므로 밝은 화면/어두운 화면 모두 맞습니다.
+ * ==========================================================================*/
+(function (root) {
+  'use strict';
+  const U = root.U;
+  const C = {};
+
+  function cssVar(name, fallback) {
+    const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    return v || fallback;
+  }
+  C.seriesColor = function (i) { return cssVar('--series-' + ((i % 8) + 1), '#2a78d6'); };
+  // 캔버스는 CSS 변수(var(--x))를 이해하지 못하므로 실제 색 값으로 바꿔서 넘겨야 합니다.
+  C.mutedColor = function () { return cssVar('--text-muted', '#898781'); };
+
+  function theme() {
+    return {
+      surface: cssVar('--surface-1', '#fcfcfb'),
+      grid: cssVar('--gridline', '#e1e0d9'),
+      axis: cssVar('--axisline', '#c3c2b7'),
+      muted: cssVar('--text-muted', '#898781'),
+      text: cssVar('--text-primary', '#0b0b0b'),
+      sec: cssVar('--text-secondary', '#52514e')
+    };
+  }
+
+  function setup(canvas) {
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas.getBoundingClientRect();
+    const w = Math.max(240, rect.width), h = Math.max(120, rect.height || canvas.clientHeight || 240);
+    canvas.width = Math.round(w * dpr);
+    canvas.height = Math.round(h * dpr);
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+    ctx.font = '12px system-ui, -apple-system, "Segoe UI", sans-serif';
+    return { ctx: ctx, w: w, h: h };
+  }
+
+  function niceTicks(min, max, count) {
+    if (!isFinite(min) || !isFinite(max)) return [0];
+    if (min === max) { min -= 1; max += 1; }
+    const span = max - min;
+    const raw = span / Math.max(1, count);
+    const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+    const norm = raw / mag;
+    const step = (norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 5 ? 5 : 10) * mag;
+    const out = [];
+    for (let v = Math.ceil(min / step) * step; v <= max + step * 1e-9; v += step) out.push(v);
+    return out;
+  }
+
+  // 툴팁(하나만 만들어 재사용)
+  let tipEl = null;
+  function tooltip() {
+    if (!tipEl) {
+      tipEl = U.el('div', 'chart-tip');
+      tipEl.style.display = 'none';
+      document.body.appendChild(tipEl);
+    }
+    return tipEl;
+  }
+  function showTip(html, x, y) {
+    const t = tooltip();
+    t.innerHTML = html;
+    t.style.display = 'block';
+    const r = t.getBoundingClientRect();
+    let left = x + 14, top = y - r.height - 10;
+    if (left + r.width > window.innerWidth - 8) left = x - r.width - 14;
+    if (top < 8) top = y + 16;
+    t.style.left = left + 'px';
+    t.style.top = top + 'px';
+  }
+  function hideTip() { if (tipEl) tipEl.style.display = 'none'; }
+  C.hideTip = hideTip;
+
+  /* ==========================================================================
+   *  선 그래프
+   *  opt = {
+   *    labels: [문자열],                       // x축 이름표 (날짜 등)
+   *    series: [{name, values, color, width, dash, area}],
+   *    yFmt: 함수, yLabel: 문자열, legend: true,
+   *    marks: [{index, color, label}],         // 세로 표시선
+   *    log: false
+   *  }
+   * ========================================================================*/
+  C.line = function (canvas, opt) {
+    const draw = function () {
+      const s = setup(canvas), ctx = s.ctx, th = theme();
+      const series = opt.series.filter(function (x) { return x && x.values && x.values.length; });
+      if (!series.length) return;
+      const n = series[0].values.length;
+      const padL = opt.padL || 58, padR = 14, padT = 12, padB = 30;
+      const W = s.w - padL - padR, H = s.h - padT - padB;
+
+      let min = Infinity, max = -Infinity;
+      series.forEach(function (se) {
+        for (let i = 0; i < se.values.length; i++) {
+          const v = se.values[i];
+          if (isFinite(v)) { if (v < min) min = v; if (v > max) max = v; }
+        }
+      });
+      if (opt.yMin !== undefined) min = Math.min(min, opt.yMin);
+      if (opt.yMax !== undefined) max = Math.max(max, opt.yMax);
+      if (!isFinite(min) || !isFinite(max)) return;
+      const pad = (max - min) * 0.06 || Math.abs(max) * 0.06 || 1;
+      min -= pad; max += pad;
+
+      const X = function (i) { return padL + (n <= 1 ? W / 2 : (i / (n - 1)) * W); };
+      const Y = function (v) { return padT + H - ((v - min) / (max - min)) * H; };
+
+      // 눈금선 (가로만, 얇게)
+      const ticks = niceTicks(min, max, 5);
+      ctx.strokeStyle = th.grid; ctx.lineWidth = 1; ctx.fillStyle = th.muted;
+      ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+      ticks.forEach(function (t) {
+        const y = Math.round(Y(t)) + 0.5;
+        if (y < padT || y > padT + H) return;
+        ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(padL + W, y); ctx.stroke();
+        ctx.fillText(opt.yFmt ? opt.yFmt(t) : U.fmt(t, 2), padL - 8, y);
+      });
+
+      // 기준선(0 또는 지정값) 강조
+      if (opt.zeroLine !== undefined && opt.zeroLine >= min && opt.zeroLine <= max) {
+        ctx.strokeStyle = th.axis; ctx.lineWidth = 1;
+        const y = Math.round(Y(opt.zeroLine)) + 0.5;
+        ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(padL + W, y); ctx.stroke();
+      }
+
+      // 세로 표시선 (예: 학습/시험 구분선)
+      (opt.marks || []).forEach(function (mk) {
+        const x = Math.round(X(mk.index)) + 0.5;
+        ctx.save();
+        ctx.strokeStyle = mk.color || th.axis;
+        ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(x, padT); ctx.lineTo(x, padT + H); ctx.stroke();
+        if (mk.label) {
+          ctx.fillStyle = th.sec; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+          ctx.fillText(mk.label, Math.min(x + 5, padL + W - 90), padT + 2);
+        }
+        ctx.restore();
+      });
+
+      // x축 이름표
+      if (opt.labels && opt.labels.length) {
+        ctx.fillStyle = th.muted; ctx.textBaseline = 'top'; ctx.textAlign = 'center';
+        const cnt = Math.max(2, Math.min(6, Math.floor(W / 90)));
+        for (let k = 0; k < cnt; k++) {
+          const i = Math.round(k * (n - 1) / (cnt - 1));
+          let x = X(i);
+          x = U.clamp(x, padL + 20, padL + W - 20);
+          ctx.fillText(opt.labels[i], x, padT + H + 8);
+        }
+      }
+
+      // 각 계열
+      series.forEach(function (se, si) {
+        const color = se.color || C.seriesColor(si);
+        if (se.area) {
+          ctx.beginPath();
+          let started = false;
+          for (let i = 0; i < n; i++) {
+            const v = se.values[i];
+            if (!isFinite(v)) continue;
+            if (!started) { ctx.moveTo(X(i), Y(v)); started = true; } else ctx.lineTo(X(i), Y(v));
+          }
+          ctx.lineTo(X(n - 1), padT + H); ctx.lineTo(X(0), padT + H); ctx.closePath();
+          ctx.globalAlpha = 0.10; ctx.fillStyle = color; ctx.fill(); ctx.globalAlpha = 1;
+        }
+        ctx.beginPath();
+        ctx.strokeStyle = color;
+        ctx.lineWidth = se.width || 2;
+        ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+        if (se.dash) ctx.setLineDash(se.dash); else ctx.setLineDash([]);
+        let pen = false;
+        for (let i = 0; i < n; i++) {
+          const v = se.values[i];
+          if (!isFinite(v)) { pen = false; continue; }
+          if (!pen) { ctx.moveTo(X(i), Y(v)); pen = true; } else ctx.lineTo(X(i), Y(v));
+        }
+        ctx.stroke();
+        ctx.setLineDash([]);
+      });
+
+      canvas.__chart = { X: X, Y: Y, n: n, padL: padL, padT: padT, W: W, H: H, series: series, min: min, max: max };
+    };
+
+    draw();
+    canvas.__redraw = draw;
+    if (!canvas.__bound) {
+      canvas.__bound = true;
+      canvas.addEventListener('mousemove', function (ev) {
+        const c = canvas.__chart;
+        if (!c || !canvas.__opt) return;
+        const rect = canvas.getBoundingClientRect();
+        const mx = ev.clientX - rect.left;
+        let i = Math.round((mx - c.padL) / (c.W || 1) * (c.n - 1));
+        i = U.clamp(i, 0, c.n - 1);
+        const o = canvas.__opt;
+        let html = '<div class="tip-h">' + ((o.labels && o.labels[i]) || ('#' + i)) + '</div>';
+        c.series.forEach(function (se, si) {
+          const v = se.values[i];
+          if (!isFinite(v)) return;
+          html += '<div class="tip-r"><span class="dot" style="background:' + (se.color || C.seriesColor(si)) + '"></span>' +
+            '<span class="tip-n">' + se.name + '</span><span class="tip-v">' +
+            (o.tipFmt ? o.tipFmt(v, se, i) : (o.yFmt ? o.yFmt(v) : U.fmt(v, 3))) + '</span></div>';
+        });
+        showTip(html, ev.clientX, ev.clientY);
+        // 십자선
+        draw();
+        const ctx = canvas.getContext('2d');
+        const th = theme();
+        ctx.save();
+        ctx.strokeStyle = th.axis; ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(Math.round(c.X(i)) + 0.5, c.padT);
+        ctx.lineTo(Math.round(c.X(i)) + 0.5, c.padT + c.H);
+        ctx.stroke();
+        c.series.forEach(function (se, si) {
+          const v = se.values[i];
+          if (!isFinite(v)) return;
+          ctx.beginPath();
+          ctx.arc(c.X(i), c.Y(v), 4.5, 0, Math.PI * 2);
+          ctx.fillStyle = se.color || C.seriesColor(si);
+          ctx.fill();
+          ctx.lineWidth = 2; ctx.strokeStyle = th.surface; ctx.stroke();
+        });
+        ctx.restore();
+      });
+      canvas.addEventListener('mouseleave', function () { hideTip(); if (canvas.__redraw) canvas.__redraw(); });
+    }
+    canvas.__opt = opt;
+    C.observe(canvas);
+  };
+
+  /* ==========================================================================
+   *  막대 그래프 (가로 막대: 이름이 길어도 읽기 좋게)
+   *  items = [{label, value, color, note}]
+   * ========================================================================*/
+  C.bars = function (canvas, opt) {
+    const draw = function () {
+      const s = setup(canvas), ctx = s.ctx, th = theme();
+      const items = opt.items || [];
+      if (!items.length) return;
+      const padL = opt.padL || 130, padR = 62, padT = 8, padB = 8;
+      const W = s.w - padL - padR, H = s.h - padT - padB;
+      const band = H / items.length;
+      const thick = Math.min(24, band * 0.62);
+
+      let lo = 0, hi = 0;
+      items.forEach(function (it) { if (it.value < lo) lo = it.value; if (it.value > hi) hi = it.value; });
+      if (opt.xMin !== undefined) lo = Math.min(lo, opt.xMin);
+      if (opt.xMax !== undefined) hi = Math.max(hi, opt.xMax);
+      if (hi === lo) hi = lo + 1;
+      const zero = opt.baseValue !== undefined ? opt.baseValue : (lo < 0 ? 0 : lo);
+      const X = function (v) { return padL + ((v - lo) / (hi - lo)) * W; };
+
+      // 기준선
+      ctx.strokeStyle = th.axis; ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(Math.round(X(zero)) + 0.5, padT);
+      ctx.lineTo(Math.round(X(zero)) + 0.5, padT + H);
+      ctx.stroke();
+
+      items.forEach(function (it, i) {
+        const cy = padT + band * i + band / 2;
+        const x0 = X(zero), x1 = X(it.value);
+        const left = Math.min(x0, x1), width = Math.max(1, Math.abs(x1 - x0));
+        const color = it.color || C.seriesColor(0);
+        const r = Math.min(4, width / 2, thick / 2);
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        // 데이터 끝만 둥글게, 기준선 쪽은 각지게
+        if (x1 >= x0) {
+          ctx.moveTo(left, cy - thick / 2);
+          ctx.lineTo(left + width - r, cy - thick / 2);
+          ctx.quadraticCurveTo(left + width, cy - thick / 2, left + width, cy - thick / 2 + r);
+          ctx.lineTo(left + width, cy + thick / 2 - r);
+          ctx.quadraticCurveTo(left + width, cy + thick / 2, left + width - r, cy + thick / 2);
+          ctx.lineTo(left, cy + thick / 2);
+        } else {
+          ctx.moveTo(left + width, cy - thick / 2);
+          ctx.lineTo(left + r, cy - thick / 2);
+          ctx.quadraticCurveTo(left, cy - thick / 2, left, cy - thick / 2 + r);
+          ctx.lineTo(left, cy + thick / 2 - r);
+          ctx.quadraticCurveTo(left, cy + thick / 2, left + r, cy + thick / 2);
+          ctx.lineTo(left + width, cy + thick / 2);
+        }
+        ctx.closePath(); ctx.fill();
+
+        ctx.fillStyle = th.sec; ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+        ctx.fillText(it.label, padL - 10, cy);
+        ctx.fillStyle = th.text; ctx.textAlign = 'left';
+        const vtxt = opt.vFmt ? opt.vFmt(it.value) : U.fmt(it.value, 3);
+        ctx.fillText(vtxt, Math.max(x0, x1) + 8, cy);
+      });
+    };
+    draw();
+    canvas.__redraw = draw;
+    C.observe(canvas);
+  };
+
+  /* ==========================================================================
+   *  ROC 곡선 — 대각선(실력 없음)과 비교해서 봅니다
+   * ========================================================================*/
+  C.roc = function (canvas, curves) {
+    const draw = function () {
+      const s = setup(canvas), ctx = s.ctx, th = theme();
+      const pad = 40, W = s.w - pad - 14, H = s.h - pad - 26;
+      const X = function (v) { return pad + v * W; };
+      const Y = function (v) { return 26 + H - v * H; };
+
+      ctx.strokeStyle = th.grid; ctx.lineWidth = 1; ctx.fillStyle = th.muted;
+      ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+      [0, 0.25, 0.5, 0.75, 1].forEach(function (t) {
+        const y = Math.round(Y(t)) + 0.5;
+        ctx.beginPath(); ctx.moveTo(pad, y); ctx.lineTo(pad + W, y); ctx.stroke();
+        ctx.fillText(t.toFixed(2), pad - 8, y);
+      });
+      ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+      [0, 0.5, 1].forEach(function (t) { ctx.fillText(t.toFixed(1), X(t), 26 + H + 6); });
+
+      // 대각선 = 실력 없음(AUC 0.5)
+      ctx.save();
+      ctx.strokeStyle = th.axis; ctx.lineWidth = 1; ctx.setLineDash([4, 4]);
+      ctx.beginPath(); ctx.moveTo(X(0), Y(0)); ctx.lineTo(X(1), Y(1)); ctx.stroke();
+      ctx.restore();
+
+      curves.forEach(function (c, i) {
+        ctx.beginPath();
+        ctx.strokeStyle = c.color || C.seriesColor(i);
+        ctx.lineWidth = 2; ctx.lineJoin = 'round';
+        c.points.forEach(function (p, k) { if (k === 0) ctx.moveTo(X(p.x), Y(p.y)); else ctx.lineTo(X(p.x), Y(p.y)); });
+        ctx.stroke();
+      });
+      ctx.fillStyle = th.muted; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+      ctx.fillText('가로: 틀리게 상승이라 한 비율   세로: 맞게 상승이라 한 비율', pad, 4);
+    };
+    draw();
+    canvas.__redraw = draw;
+    C.observe(canvas);
+  };
+
+  /* ==========================================================================
+   *  히스토그램 (두 집단 비교용)
+   * ========================================================================*/
+  C.hist = function (canvas, groups, opt) {
+    opt = opt || {};
+    const draw = function () {
+      const s = setup(canvas), ctx = s.ctx, th = theme();
+      const all = [];
+      groups.forEach(function (g) { for (let i = 0; i < g.values.length; i++) if (isFinite(g.values[i])) all.push(g.values[i]); });
+      if (!all.length) return;
+      const lo = U.quantile(all, 0.005), hi = U.quantile(all, 0.995);
+      const bins = opt.bins || 34;
+      const padL = 46, padR = 12, padT = 10, padB = 28;
+      const W = s.w - padL - padR, H = s.h - padT - padB;
+      const counts = groups.map(function (g) {
+        const c = new Float64Array(bins);
+        let tot = 0;
+        for (let i = 0; i < g.values.length; i++) {
+          const v = g.values[i];
+          if (!isFinite(v)) continue;
+          let b = Math.floor((v - lo) / (hi - lo) * bins);
+          b = U.clamp(b, 0, bins - 1); c[b]++; tot++;
+        }
+        if (tot) for (let b = 0; b < bins; b++) c[b] /= tot;   // 비율로 (표본 수가 달라도 비교 가능)
+        return c;
+      });
+      let mx = 0;
+      counts.forEach(function (c) { for (let b = 0; b < bins; b++) if (c[b] > mx) mx = c[b]; });
+      const bw = W / bins;
+
+      ctx.strokeStyle = th.grid; ctx.lineWidth = 1; ctx.fillStyle = th.muted;
+      ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+      niceTicks(0, mx, 4).forEach(function (t) {
+        const y = Math.round(padT + H - (t / mx) * H) + 0.5;
+        if (y < padT) return;
+        ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(padL + W, y); ctx.stroke();
+        ctx.fillText(U.pct(t, 0), padL - 6, y);
+      });
+
+      counts.forEach(function (c, gi) {
+        ctx.fillStyle = groups[gi].color || C.seriesColor(gi);
+        ctx.globalAlpha = gi === 0 ? 0.75 : 0.5;
+        for (let b = 0; b < bins; b++) {
+          const h = (c[b] / mx) * H;
+          if (h <= 0) continue;
+          ctx.fillRect(padL + b * bw + 1, padT + H - h, Math.max(1, bw - 2), h);
+        }
+      });
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = th.muted; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+      [0, 0.5, 1].forEach(function (f) {
+        ctx.fillText(opt.xFmt ? opt.xFmt(lo + (hi - lo) * f) : U.fmt(lo + (hi - lo) * f, 2), padL + W * f, padT + H + 6);
+      });
+    };
+    draw();
+    canvas.__redraw = draw;
+    C.observe(canvas);
+  };
+
+  /* --------------------------------------------------------------------------
+   *  창 크기가 바뀌면 다시 그리기
+   * ------------------------------------------------------------------------*/
+  const observed = new Set();
+  C.observe = function (canvas) {
+    if (observed.has(canvas)) return;
+    observed.add(canvas);
+    if (window.ResizeObserver) {
+      const ro = new ResizeObserver(function () { if (canvas.__redraw && canvas.offsetParent !== null) canvas.__redraw(); });
+      ro.observe(canvas);
+    }
+  };
+  C.redrawAll = function () {
+    observed.forEach(function (c) { if (c.__redraw && c.offsetParent !== null) c.__redraw(); });
+  };
+  window.addEventListener('resize', function () { C.redrawAll(); });
+
+  // 범례 만들기 (색만으로 구분하지 않도록 항상 이름을 함께 보여줍니다)
+  C.legend = function (items) {
+    const box = U.el('div', 'legend');
+    items.forEach(function (it, i) {
+      const w = U.el('span', 'legend-item');
+      const d = U.el('span', 'legend-dot');
+      d.style.background = it.color || C.seriesColor(i);
+      if (it.dash) d.classList.add('dashed');
+      w.appendChild(d);
+      w.appendChild(U.el('span', '', it.name));
+      box.appendChild(w);
+    });
+    return box;
+  };
+
+  root.C = C;
+})(window.FRSP = window.FRSP || {});
+
+</script>
+<script>
+/* ===== js/backtest.js ===== */
+/* ============================================================================
+ *  backtest.js — 검증과 모의투자 계산
+ *   1) 시간순 분할 검증 (앞 80% 학습 → 뒤 20% 시험)      … Phase 1-a 방식
+ *   2) 워크포워드 검증 (50일마다 새 데이터로 재학습)       … Phase 1-b 방식
+ *   3) 거래비용을 물린 백테스트                            … Phase 1-b 방식
+ *
+ *  누수 방지 규칙 (아주 중요)
+ *   - 학습은 언제나 '그 시점까지'의 데이터만 씁니다.
+ *   - 오늘 들고 있을 포지션은 '어제 만든 예측'으로 정합니다.
+ * ==========================================================================*/
+(function (root) {
+  'use strict';
+  const U = root.U, ML = root.ML, M = root.M;
+  const B = {};
+
+  function slice(X, a, b) { return X.slice(a, b); }
+
+  /* --------------------------------------------------------------------------
+   *  [1] 시간순 분할 검증
+   * ------------------------------------------------------------------------*/
+  B.holdout = function (sup, modelId, opt) {
+    opt = opt || {};
+    const ratio = opt.trainRatio || 0.8;
+    const split = Math.floor(sup.n * ratio);
+    const Xtr = slice(sup.X, 0, split), Xte = slice(sup.X, split, sup.n);
+    const ytr = sup.y.slice(0, split), yte = sup.y.slice(split, sup.n);
+
+    const model = ML.create(modelId, Object.assign({ featureCols: sup.featureCols }, opt.modelOpt || {}));
+    const t0 = performance.now();
+    model.fit(Xtr, ytr);
+    const trainMs = performance.now() - t0;
+    const proba = model.predictProba(Xte);
+    const met = M.classify(yte, proba, opt.threshold);
+    return {
+      modelId: modelId, split: split, proba: proba, yTest: yte,
+      metrics: met, importance: model.importance ? model.importance() : null,
+      trainMs: trainMs, roc: M.rocCurve(yte, proba)
+    };
+  };
+
+  /* --------------------------------------------------------------------------
+   *  [2] 워크포워드 검증 (확장 윈도우)
+   *   - 전체의 startFrac 지점부터 시작
+   *   - 다음 step일을 그 시점 모델로 예측
+   *   - 그 구간의 실제값을 학습셋에 넣고 재학습 → 반복
+   *  화면이 멈추지 않도록 재학습 사이사이에 잠깐 양보(await)합니다.
+   * ------------------------------------------------------------------------*/
+  B.walkForward = async function (sup, modelId, opt) {
+    opt = opt || {};
+    const startFrac = opt.startFrac || 0.6;
+    const step = opt.step || 60;
+    const n = sup.n;
+    const start = Math.floor(n * startFrac);
+    const proba = new Float64Array(n); proba.fill(NaN);
+    let retrains = 0;
+    const total = Math.ceil((n - start) / step);
+    const t0 = performance.now();
+
+    for (let i = start; i < n; i += step) {
+      const end = Math.min(i + step, n);
+      const model = ML.create(modelId, Object.assign({ featureCols: sup.featureCols }, opt.modelOpt || {}));
+      model.fit(slice(sup.X, 0, i), sup.y.slice(0, i));      // 미래를 절대 보지 않음
+      const pr = model.predictProba(slice(sup.X, i, end));
+      for (let k = 0; k < pr.length; k++) proba[i + k] = pr[k];
+      retrains++;
+      if (opt.onProgress) opt.onProgress(retrains / total, retrains, total);
+      await U.yield_();
+    }
+    const yTest = sup.y.slice(start, n);
+    const pTest = proba.slice(start, n);
+    return {
+      modelId: modelId, start: start, proba: proba, retrains: retrains,
+      metrics: M.classify(yTest, pTest, opt.threshold),
+      roc: M.rocCurve(yTest, pTest),
+      elapsedMs: performance.now() - t0
+    };
+  };
+
+  /* --------------------------------------------------------------------------
+   *  [3] 백테스트
+   *  전략: 모델이 '오른다'고 하면 지수 보유(1), 아니면 현금(0). 공매도 없음.
+   *  비용: 포지션이 바뀐 날에만 (수수료 + 슬리피지)를 뺍니다.
+   * ------------------------------------------------------------------------*/
+  B.backtest = function (sup, proba, start, opt) {
+    opt = opt || {};
+    const cost = (opt.costPerSide === undefined ? 0.0005 : opt.costPerSide);
+    const slip = (opt.slippage === undefined ? 0.0005 : opt.slippage);
+    const th = (opt.threshold === undefined ? 0.5 : opt.threshold);
+    const n = sup.n;
+    const dates = [], strat = [], bh = [], pos = [], trade = [], costs = [];
+    let prev = 0;
+    for (let t = start + 1; t < n; t++) {
+      const p = proba[t - 1];                       // 어제 만든 예측으로 오늘 포지션 결정
+      if (!isFinite(p)) continue;
+      const position = p >= th ? 1 : 0;
+      const mkt = sup.ret[t];
+      const tr = Math.abs(position - prev);
+      const c = (cost + slip) * tr;
+      dates.push(sup.dates[t]);
+      pos.push(position);
+      trade.push(tr);
+      costs.push(c);
+      strat.push(position * mkt - c);
+      bh.push(mkt);
+      prev = position;
+    }
+    const ps = M.perf(strat), pb = M.perf(bh);
+    // 비용을 물리지 않았다면?
+    const gross = strat.map(function (v, i) { return v + costs[i]; });
+    return {
+      dates: dates, strat: strat, bh: bh, pos: pos, trade: trade, cost: costs,
+      perfStrat: ps, perfBH: pb, perfGross: M.perf(gross),
+      nTrades: U.sum(trade), exposure: U.mean(pos),
+      totalCost: U.sum(costs)
+    };
+  };
+
+  // 거래비용을 바꿔가며 전략이 언제 매수후보유에 지는지 확인
+  B.costSweep = function (sup, proba, start, levels, opt) {
+    return levels.map(function (lv) {
+      const r = B.backtest(sup, proba, start, Object.assign({}, opt, { costPerSide: lv / 2, slippage: lv / 2 }));
+      return { level: lv, strat: r.perfStrat.total, bh: r.perfBH.total, sharpe: r.perfStrat.sharpe };
+    });
+  };
+
+  root.B = B;
+})(window.FRSP = window.FRSP || {});
+
+</script>
+<script>
+/* ===== js/sim.js ===== */
+/* ============================================================================
+ *  sim.js — 모의투자 엔진
+ *
+ *  하루씩 넘기면서 직접 사고팔아 보고, 같은 기간을 같은 조건으로 달리는
+ *  'AI 자동매매'와 '그냥 사서 들고 있기(Buy & Hold)'를 나란히 비교합니다.
+ *
+ *  규칙
+ *   - 매매는 그날 종가로 체결되고, 살 때와 팔 때 각각 비용(수수료+슬리피지)을 뗍니다.
+ *   - AI는 그날까지의 정보로 만든 예측(proba[t])만 보고 다음 날 포지션을 정합니다.
+ *     즉 미래를 미리 알지 못합니다. (누수 없음)
+ *   - 공매도·레버리지는 없습니다. 현금과 주식 사이만 오갑니다.
+ *
+ *  ★ 교육용입니다. 실제 투자 판단에 쓰지 마세요.
+ * ==========================================================================*/
+(function (root) {
+  'use strict';
+  const U = root.U, M = root.M;
+  const S = {};
+
+  function Portfolio(cash, label) {
+    this.cash = cash; this.shares = 0; this.label = label;
+    this.trades = 0; this.costPaid = 0;
+  }
+  Portfolio.prototype.value = function (price) { return this.cash + this.shares * price; };
+  Portfolio.prototype.weight = function (price) {
+    const v = this.value(price);
+    return v > 0 ? (this.shares * price) / v : 0;
+  };
+  // 목표 비중(0~1)에 맞춰 사고팝니다.
+  Portfolio.prototype.rebalance = function (price, targetW, feeRate) {
+    const v = this.value(price);
+    if (v <= 0) return 0;
+    const targetShares = (v * targetW) / price;
+    const delta = targetShares - this.shares;
+    if (Math.abs(delta * price) < v * 1e-4) return 0;       // 아주 작은 조정은 무시
+    const notional = Math.abs(delta * price);
+    const fee = notional * feeRate;
+    this.cash -= delta * price + fee;
+    this.shares += delta;
+    this.trades += 1;
+    this.costPaid += fee;
+    return delta;
+  };
+
+  /* --------------------------------------------------------------------------
+   *  시뮬레이터 만들기
+   *  opt = { sup, proba, start, cash, feeRate, threshold, aiWeight }
+   * ------------------------------------------------------------------------*/
+  S.create = function (opt) {
+    const sup = opt.sup;
+    const start = opt.start;
+    const feeRate = (opt.feeRate === undefined ? 0.001 : opt.feeRate);
+    const cash = opt.cash || 10000000;
+
+    const sim = {
+      sup: sup, proba: opt.proba, start: start, feeRate: feeRate, initial: cash,
+      threshold: (opt.threshold === undefined ? 0.5 : opt.threshold),
+      aiWeight: (opt.aiWeight === undefined ? 1 : opt.aiWeight),
+      t: start,
+      user: new Portfolio(cash, '내 계좌'),
+      ai: new Portfolio(cash, 'AI 자동매매'),
+      bh: new Portfolio(cash, '사서 들고 있기'),
+      hist: { dates: [], price: [], user: [], ai: [], bh: [], aiProba: [], userW: [], aiW: [] },
+      log: []
+    };
+
+    // 매수후보유는 첫날 전액 매수
+    sim.bh.rebalance(sup.close[start], 1, feeRate);
+    S.record(sim);
+    return sim;
+  };
+
+  S.price = function (sim) { return sim.sup.close[sim.t]; };
+  S.date = function (sim) { return sim.sup.dates[sim.t]; };
+  S.done = function (sim) { return sim.t >= sim.sup.n - 1; };
+  S.aiProbaNow = function (sim) {
+    const p = sim.proba ? sim.proba[sim.t] : NaN;
+    return isFinite(p) ? p : NaN;
+  };
+
+  S.record = function (sim) {
+    const px = S.price(sim);
+    sim.hist.dates.push(S.date(sim));
+    sim.hist.price.push(px);
+    sim.hist.user.push(sim.user.value(px));
+    sim.hist.ai.push(sim.ai.value(px));
+    sim.hist.bh.push(sim.bh.value(px));
+    sim.hist.aiProba.push(S.aiProbaNow(sim));
+    sim.hist.userW.push(sim.user.weight(px));
+    sim.hist.aiW.push(sim.ai.weight(px));
+  };
+
+  // 사용자 주문: 현금의 f배만큼 매수 (f = 0.25/0.5/1)
+  S.buy = function (sim, f) {
+    const px = S.price(sim);
+    const v = sim.user.value(px);
+    const targetValue = sim.user.shares * px + sim.user.cash * U.clamp(f, 0, 1);
+    const w = v > 0 ? targetValue / v : 0;
+    const before = sim.user.shares;
+    sim.user.rebalance(px, U.clamp(w, 0, 1), sim.feeRate);
+    if (sim.user.shares !== before) {
+      sim.log.push({ date: S.date(sim), type: '매수', price: px, qty: sim.user.shares - before, value: sim.user.value(px) });
+    }
+    S.updateLast(sim);
+  };
+
+  // 사용자 주문: 보유 주식의 f배만큼 매도
+  S.sell = function (sim, f) {
+    const px = S.price(sim);
+    const v = sim.user.value(px);
+    const targetShares = sim.user.shares * (1 - U.clamp(f, 0, 1));
+    const w = v > 0 ? (targetShares * px) / v : 0;
+    const before = sim.user.shares;
+    sim.user.rebalance(px, U.clamp(w, 0, 1), sim.feeRate);
+    if (sim.user.shares !== before) {
+      sim.log.push({ date: S.date(sim), type: '매도', price: px, qty: sim.user.shares - before, value: sim.user.value(px) });
+    }
+    S.updateLast(sim);
+  };
+
+  // 방금 체결한 거래를 현재 기록에 반영
+  S.updateLast = function (sim) {
+    const px = S.price(sim), h = sim.hist, k = h.dates.length - 1;
+    if (k < 0) return;
+    h.user[k] = sim.user.value(px);
+    h.userW[k] = sim.user.weight(px);
+  };
+
+  /* --------------------------------------------------------------------------
+   *  하루 넘기기
+   *   1) AI가 오늘까지의 예측으로 내일 포지션을 정하고 (오늘 종가로 체결)
+   *   2) 사용자가 'AI 자동매매 따라하기'를 켰다면 사용자 계좌도 같이 조정
+   *   3) 날짜를 하루 넘기고 평가금액을 다시 계산
+   * ------------------------------------------------------------------------*/
+  S.step = function (sim, followAI) {
+    if (S.done(sim)) return false;
+    const px = S.price(sim);
+    const p = S.aiProbaNow(sim);
+    const targetW = isFinite(p) ? (p >= sim.threshold ? sim.aiWeight : 0) : sim.ai.weight(px);
+    sim.ai.rebalance(px, targetW, sim.feeRate);
+    if (followAI) sim.user.rebalance(px, targetW, sim.feeRate);
+    S.updateLast(sim);
+    sim.t += 1;
+    S.record(sim);
+    return true;
+  };
+
+  S.stepMany = function (sim, k, followAI) {
+    let done = 0;
+    for (let i = 0; i < k; i++) { if (!S.step(sim, followAI)) break; done++; }
+    return done;
+  };
+
+  /* --------------------------------------------------------------------------
+   *  성적 요약
+   * ------------------------------------------------------------------------*/
+  function toReturns(series) {
+    const r = new Float64Array(Math.max(0, series.length - 1));
+    for (let i = 1; i < series.length; i++) r[i - 1] = series[i] / series[i - 1] - 1;
+    return r;
+  }
+  S.summary = function (sim) {
+    const h = sim.hist;
+    const mk = function (name, series, pf) {
+      const perf = M.perf(toReturns(series));
+      return {
+        name: name,
+        final: series[series.length - 1],
+        total: series[series.length - 1] / sim.initial - 1,
+        // 반년도 안 지난 구간을 연평균으로 환산하면 과장되므로 그때는 표시하지 않습니다.
+        cagr: perf.years >= 0.5 ? perf.cagr : NaN,
+        sharpe: perf.years >= 0.2 ? perf.sharpe : NaN, mdd: perf.mdd,
+        trades: pf ? pf.trades : 0, cost: pf ? pf.costPaid : 0
+      };
+    };
+    return [
+      mk('내 계좌', h.user, sim.user),
+      mk('AI 자동매매', h.ai, sim.ai),
+      mk('사서 들고 있기', h.bh, sim.bh)
+    ];
+  };
+
+  root.S = S;
+})(window.FRSP = window.FRSP || {});
+
+</script>
+<script>
+/* ===== js/app.js ===== */
+/* ============================================================================
+ *  app.js — 화면 연결 (탭, 버튼, 결과 그리기)
+ * ==========================================================================*/
+(function (root) {
+  'use strict';
+  const U = root.U, D = root.D, ML = root.ML, M = root.M, C = root.C, B = root.B, S = root.S;
+  const $ = U.$, $$ = U.$$;
+
+  const state = {
+    data: null, feats: null, supCache: {},
+    models: null, bt: null, sim: null, simTimer: null
+  };
+
+  /* ==========================================================================
+   *  기본 뼈대: 탭 / 테마
+   * ========================================================================*/
+  function setTab(id) {
+    $$('nav.tabs button').forEach(function (b) { b.classList.toggle('on', b.dataset.tab === id); });
+    $$('.panel').forEach(function (p) { p.classList.toggle('on', p.id === 'panel-' + id); });
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    setTimeout(function () { C.redrawAll(); }, 30);
+  }
+
+  function initTheme() {
+    const btn = $('#themeBtn');
+    const saved = (function () { try { return localStorage.getItem('frsp-theme'); } catch (e) { return null; } })();
+    if (saved) document.documentElement.setAttribute('data-theme', saved);
+    btn.addEventListener('click', function () {
+      const cur = document.documentElement.getAttribute('data-theme');
+      const isDark = cur ? cur === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches;
+      const next = isDark ? 'light' : 'dark';
+      document.documentElement.setAttribute('data-theme', next);
+      try { localStorage.setItem('frsp-theme', next); } catch (e) {}
+      setTimeout(function () { C.redrawAll(); }, 20);
+    });
+  }
+
+  function status(sel, msg) { const e = $(sel); if (e) e.textContent = msg || ''; }
+  function progress(sel, frac) {
+    const box = $(sel);
+    if (!box) return;
+    if (frac === null) { box.classList.remove('on'); return; }
+    box.classList.add('on');
+    box.firstElementChild.style.width = Math.round(U.clamp(frac, 0, 1) * 100) + '%';
+  }
+
+  /* ==========================================================================
+   *  데이터
+   * ========================================================================*/
+  function setData(data) {
+    state.data = data;
+    state.feats = D.makeFeatures(data);
+    state.supCache = {};
+    state.models = null; state.bt = null;
+    if (state.sim) { stopAuto(); state.sim = null; $('#simBoard').classList.add('hidden'); }
+    $('#modelResult').classList.add('hidden');
+    $('#abResult').classList.add('hidden');
+    $('#btResult').classList.add('hidden');
+    $('#volResult').classList.add('hidden');
+
+    const badge = $('#dataBadge');
+    badge.classList.toggle('demo', !!data.meta.synthetic);
+    badge.classList.toggle('real', !data.meta.synthetic);
+    $('#dataBadgeText').textContent = data.meta.name + (data.meta.synthetic ? ' · 가상' : '') +
+      ' · ' + data.close.length.toLocaleString('ko-KR') + '일';
+    renderDataTab();
+  }
+
+  function featureCols() {
+    let cols = D.BASE_FEATURES.slice();
+    if ($('#mRate').checked && state.data.rate) cols = cols.concat(D.RATE_FEATURES);
+    if ($('#mExtra').checked) cols = cols.concat(D.EXTRA_FEATURES);
+    return cols;
+  }
+
+  function getSup(horizon, cols) {
+    const key = horizon + '|' + cols.join(',');
+    if (!state.supCache[key]) state.supCache[key] = D.buildSupervised(state.data, state.feats, cols, horizon);
+    return state.supCache[key];
+  }
+
+  function dateLabels(dates) {
+    return dates.map(function (d) { return U.dstr(d).slice(2, 7); });
+  }
+
+  function renderDataTab() {
+    const d = state.data;
+    $('#dataResult').classList.remove('hidden');
+
+    const ret = state.feats['return'];
+    const clean = [];
+    for (let i = 1; i < ret.length; i++) if (isFinite(ret[i])) clean.push(ret[i]);
+    let ups = 0;
+    for (let i = 0; i < clean.length; i++) if (clean[i] > 0) ups++;
+    const years = clean.length / M.TRADING_DAYS;
+    const totalRet = d.close[d.close.length - 1] / d.close[0] - 1;
+    const cagr = years > 0 ? Math.pow(1 + totalRet, 1 / years) - 1 : NaN;
+    const vol = U.std(clean) * Math.sqrt(M.TRADING_DAYS);
+
+    const tiles = [
+      ['기간', U.dstr(d.dates[0]) + ' ~', U.dstr(d.dates[d.dates.length - 1])],
+      ['표본 수', d.close.length.toLocaleString('ko-KR') + '일', '거래일 기준'],
+      ['상승일 비율', U.pct(ups / clean.length, 1), '기준선의 출발점'],
+      ['연평균 수익률', U.signPct(cagr, 1), '연변동성 ' + U.pct(vol, 1)]
+    ];
+    const box = $('#dataTiles');
+    box.innerHTML = '';
+    tiles.forEach(function (t) {
+      const el = U.el('div', 'tile');
+      el.appendChild(U.el('div', 'label', t[0]));
+      el.appendChild(U.el('div', 'value', t[1]));
+      el.appendChild(U.el('div', 'sub', t[2]));
+      box.appendChild(el);
+    });
+
+    if (d.meta.note) {
+      const n = U.el('div', 'note' + (d.meta.synthetic ? ' warn' : ''));
+      n.innerHTML = '<strong>' + (d.meta.synthetic ? '가상 데이터입니다. ' : '') + '</strong>' + d.meta.note;
+      box.parentNode.insertBefore(n, box.nextSibling);
+    }
+
+    const labels = dateLabels(d.dates);
+    $('#priceTitle').textContent = d.meta.priceLabel + (d.meta.synthetic ? ' (가상)' : '');
+    C.line($('#chartPrice'), {
+      labels: labels,
+      series: [{ name: d.meta.priceLabel, values: Array.from(d.close), color: C.seriesColor(0), area: true }],
+      yFmt: function (v) { return U.compact(v); }
+    });
+
+    if (d.rate) {
+      $('#rateCard').classList.remove('hidden');
+      $('#rateTitle').textContent = d.meta.rateLabel + (d.meta.synthetic ? ' (가상)' : '');
+      C.line($('#chartRate'), {
+        labels: labels,
+        series: [{ name: d.meta.rateLabel, values: Array.from(d.rate), color: C.seriesColor(1) }],
+        yFmt: function (v) { return U.fmt(v, 2) + '%'; }
+      });
+    } else {
+      $('#rateCard').classList.add('hidden');
+    }
+
+    // 특징 미리보기 (마지막 6일)
+    const cols = D.BASE_FEATURES.concat(d.rate ? D.RATE_FEATURES : []);
+    const head = ['날짜', '종가'].concat(cols.map(function (c) { return D.FEATURE_SHORT[c] || c; }));
+    const rows = [];
+    for (let i = Math.max(0, d.close.length - 6); i < d.close.length; i++) {
+      const r = [U.dstr(d.dates[i]), U.comma(d.close[i])];
+      cols.forEach(function (c) {
+        const v = state.feats[c] ? state.feats[c][i] : NaN;
+        r.push(isFinite(v) ? (Math.abs(v) < 0.01 ? U.fmt(v, 4) : U.fmt(v, 3)) : '—');
+      });
+      rows.push(r);
+    }
+    const fp = $('#featPreview'); fp.innerHTML = '';
+    fp.appendChild(U.table(head, rows));
+    const legend = U.el('p', 'tiny', cols.map(function (c) {
+      return (D.FEATURE_SHORT[c] || c) + ' = ' + D.FEATURE_LABEL[c];
+    }).join(' · '));
+    fp.appendChild(legend);
+  }
+
+  /* ==========================================================================
+   *  모델 비교
+   * ========================================================================*/
+  function selectedModels() {
+    return $$('#modelChips input:checked').map(function (i) { return i.value; });
+  }
+
+  async function runModels(quiet) {
+    const ids = selectedModels();
+    if (!ids.length) { status('#modelStatus', '모델을 하나 이상 선택하세요.'); return; }
+    const horizon = +$('#mHorizon').value;
+    const cols = featureCols();
+    const sup = getSup(horizon, cols);
+    const useWalk = $('#mValidation').value === 'walk';
+    const opt = {
+      trainRatio: +$('#mRatio').value,
+      threshold: +$('#mThreshold').value,
+      modelOpt: { classWeight: $('#mWeight').checked, seed: 42 }
+    };
+
+    $('#runModels').disabled = true;
+    const results = [];
+    for (let k = 0; k < ids.length; k++) {
+      status('#modelStatus', '학습 중… (' + (k + 1) + '/' + ids.length + ') ' + ML.modelName(ids[k]));
+      progress('#modelProg', k / ids.length);
+      await U.yield_();
+      try {
+        let r;
+        if (useWalk) {
+          r = await B.walkForward(sup, ids[k], Object.assign({ startFrac: opt.trainRatio, step: 100 }, opt));
+          r.split = r.start;
+          r.yTest = sup.y.slice(r.start, sup.n);
+          r.probaTest = r.proba.slice(r.start, sup.n);
+        } else {
+          r = B.holdout(sup, ids[k], opt);
+          r.probaTest = r.proba;
+        }
+        r.name = ML.modelName(ids[k]);
+        results.push(r);
+      } catch (e) {
+        status('#modelStatus', ids[k] + ' 학습 실패: ' + e.message);
+      }
+    }
+    progress('#modelProg', null);
+    $('#runModels').disabled = false;
+    status('#modelStatus', '완료. 시험 구간 ' + (sup.n - Math.floor(sup.n * opt.trainRatio)).toLocaleString('ko-KR') +
+      '일 · 예측 시계 ' + horizon + '일 · 특징 ' + cols.length + '개' + (useWalk ? ' · 워크포워드' : ' · 시간순 분할'));
+
+    state.models = { results: results, sup: sup, horizon: horizon, cols: cols, opt: opt, walk: useWalk };
+    renderModels();
+    if (!quiet) setTab('models');
+  }
+
+  function renderModels() {
+    const st = state.models;
+    if (!st) return;
+    $('#modelResult').classList.remove('hidden');
+    const rs = st.results.slice().sort(function (a, b) {
+      const A = isFinite(a.metrics.auc) ? a.metrics.auc : 0, Bv = isFinite(b.metrics.auc) ? b.metrics.auc : 0;
+      return Bv - A;
+    });
+
+    // --- 성적표 ---
+    const head = ['모델', '정확도', '기준선', '차이', 'AUC', '정밀도', '재현율', 'F1', 'MCC', '상승예측비율', 'p값(vs기준선)'];
+    const rows = rs.map(function (r) {
+      const m = r.metrics;
+      const row = [
+        r.name + (ML.isRule(r.modelId) ? ' <span class="tiny">(기준선)</span>' : ''),
+        U.fmt(m.acc, 3), U.fmt(m.baseline, 3),
+        '<span class="' + (m.edge > 0 ? 'up' : 'down') + '">' + (m.edge >= 0 ? '+' : '') + U.fmt(m.edge, 3) + '</span>',
+        isFinite(m.auc) ? U.fmt(m.auc, 3) : '—',
+        U.fmt(m.precision, 3), U.fmt(m.recall, 3), U.fmt(m.f1, 3), U.fmt(m.mcc, 3),
+        U.fmt(m.upRate, 3), isFinite(m.pVsBaseline) ? U.fmt(m.pVsBaseline, 4) : '—'
+      ];
+      if (r === rs[0]) row.__cls = 'best';
+      return row;
+    });
+    const tw = $('#modelTable'); tw.innerHTML = '';
+    tw.appendChild(U.table(head, rows));
+
+    // --- 경고 ---
+    // 기준선 모델(항상 상승·무작위·모멘텀)은 원래 그렇게 동작하도록 만든 비교 대상이므로
+    // 경고를 붙이지 않습니다. AI 모델의 경고만 보여야 신호가 묻히지 않습니다.
+    const wbox = $('#modelWarnings'); wbox.innerHTML = '';
+    const seen = {};
+    rs.forEach(function (r) {
+      if (ML.isRule(r.modelId)) return;
+      r.metrics.warnings.forEach(function (w) {
+        const key = r.name + w;
+        if (seen[key]) return; seen[key] = 1;
+        const n = U.el('div', 'note warn');
+        n.innerHTML = '<strong>' + r.name + ':</strong> ' + w;
+        wbox.appendChild(n);
+      });
+    });
+
+    // --- AUC 막대 ---
+    C.bars($('#chartAuc'), {
+      items: rs.filter(function (r) { return isFinite(r.metrics.auc); }).map(function (r, i) {
+        return { label: r.name, value: r.metrics.auc, color: ML.isRule(r.modelId) ? C.mutedColor() : C.seriesColor(i) };
+      }),
+      baseValue: 0.5, xMin: 0.42, xMax: 0.58,
+      vFmt: function (v) { return U.fmt(v, 3); }
+    });
+
+    // --- ROC (상위 4개) ---
+    const top = rs.filter(function (r) { return r.roc && isFinite(r.metrics.auc); }).slice(0, 4);
+    C.roc($('#chartRoc'), top.map(function (r, i) { return { points: r.roc, color: C.seriesColor(i) }; }));
+    const rl = $('#rocLegend'); rl.innerHTML = '';
+    rl.appendChild(C.legend(top.map(function (r, i) { return { name: r.name + ' (AUC ' + U.fmt(r.metrics.auc, 3) + ')', color: C.seriesColor(i) }; })));
+
+    // --- 혼동행렬 선택 ---
+    const sel = $('#cmModel');
+    const prev = sel.value;
+    sel.innerHTML = '';
+    rs.forEach(function (r) {
+      const o = U.el('option', '', r.name); o.value = r.modelId; sel.appendChild(o);
+    });
+    if (prev && rs.some(function (r) { return r.modelId === prev; })) sel.value = prev;
+    renderConfusion();
+    sel.onchange = renderConfusion;
+
+    // --- 해석 ---
+    renderModelReading(rs);
+  }
+
+  function renderConfusion() {
+    const st = state.models;
+    const id = $('#cmModel').value;
+    let r = null;
+    st.results.forEach(function (x) { if (x.modelId === id) r = x; });
+    if (!r) return;
+    const m = r.metrics;
+    const cm = $('#confMatrix');
+    cm.innerHTML = '';
+    const cell = function (v, label, hit) {
+      const d = U.el('div', 'cell' + (hit ? ' hit' : ''));
+      d.innerHTML = '<b>' + v.toLocaleString('ko-KR') + '</b><span>' + label + '</span>';
+      return d;
+    };
+    cm.appendChild(U.el('div', 'h', ''));
+    cm.appendChild(U.el('div', 'h', '예측: 상승'));
+    cm.appendChild(U.el('div', 'h', '예측: 하락'));
+    cm.appendChild(U.el('div', 'h', '실제 상승'));
+    cm.appendChild(cell(m.tp, '맞힘', true));
+    cm.appendChild(cell(m.fn, '놓침', false));
+    cm.appendChild(U.el('div', 'h', '실제 하락'));
+    cm.appendChild(cell(m.fp, '헛짚음', false));
+    cm.appendChild(cell(m.tn, '맞힘', true));
+
+    // 변수 중요도
+    const imp = r.importance;
+    const cols = st.cols;
+    if (imp && imp.length === cols.length) {
+      const items = cols.map(function (c, i) { return { label: D.FEATURE_LABEL[c] || c, value: imp[i] }; })
+        .sort(function (a, b) { return b.value - a.value; })
+        .map(function (it, i) { return { label: it.label, value: it.value, color: C.seriesColor(0) }; });
+      $('#impNote').textContent = '모델이 어떤 값을 많이 참고했는지. 합이 1이 되도록 맞춘 상대값입니다.';
+      C.bars($('#chartImp'), { items: items, xMin: 0, vFmt: function (v) { return U.pct(v, 1); }, padL: 190 });
+    } else {
+      const cv = $('#chartImp'), ctx = cv.getContext('2d');
+      ctx.clearRect(0, 0, cv.width, cv.height);
+      cv.__redraw = null;
+      $('#impNote').textContent = ML.isRule(id)
+        ? '기준선 모델은 변수를 쓰지 않으므로 중요도가 없습니다.'
+        : '워크포워드는 구간마다 모델을 새로 학습하므로 하나의 중요도를 보여주지 않습니다. 시간순 분할로 확인하세요.';
+    }
+  }
+
+  function renderModelReading(rs) {
+    const st = state.models;
+    const ai = rs.filter(function (r) { return !ML.isRule(r.modelId); });
+    const best = ai[0] || rs[0];
+    const box = $('#modelReading');
+    if (!best) { box.innerHTML = ''; return; }
+    const m = best.metrics;
+    let verdict, cls;
+    if (isFinite(m.auc) && m.auc >= 0.55 && m.edge > 0) {
+      verdict = '이 설정에서는 <strong>약한 예측력이 보입니다</strong>. 다만 백테스트에서 거래비용을 물려도 남는지 확인해야 합니다.';
+      cls = 'ok';
+    } else if (isFinite(m.auc) && m.auc >= 0.52) {
+      verdict = '판별력이 <strong>아주 약하게</strong> 있습니다. 우연일 수 있으니 예측 시계·기간을 바꿔가며 반복해 보세요.';
+      cls = '';
+    } else {
+      verdict = '이 설정에서는 <strong>예측력이 사실상 없습니다</strong>. 실패가 아니라 효율적 시장 가설과 어울리는 정직한 결과입니다.';
+      cls = 'warn';
+    }
+    const alwaysUp = rs.filter(function (r) { return r.modelId === 'alwaysup'; })[0];
+    let cmp = '';
+    if (alwaysUp) {
+      cmp = ' 참고로 "항상 상승"만 찍는 기준선의 정확도는 ' + U.fmt(alwaysUp.metrics.acc, 3) +
+        '입니다. 모델이 이 숫자를 넘지 못하면 의미가 없습니다.';
+    }
+    box.innerHTML =
+      '<h3>이 결과는 이렇게 읽습니다</h3>' +
+      '<div class="note ' + cls + '">가장 좋은 모델은 <strong>' + best.name + '</strong>이고 AUC ' + U.fmt(m.auc, 3) +
+      ', 정확도 ' + U.fmt(m.acc, 3) + ' (기준선 ' + U.fmt(m.baseline, 3) + ', 차이 ' + (m.edge >= 0 ? '+' : '') + U.fmt(m.edge, 3) + ')입니다. ' +
+      verdict + cmp + '</div>' +
+      '<p class="small">시험 구간 ' + m.n.toLocaleString('ko-KR') + '일 · 예측 시계 ' + st.horizon + '일 · 특징 ' +
+      st.cols.length + '개 · ' + (st.walk ? '워크포워드' : '시간순 분할') + ' · 문턱값 ' + U.fmt(st.opt.threshold, 2) + '</p>' +
+      '<p class="small">다음으로 해볼 것: 예측 시계를 바꿔 보기, 금리 특징을 빼 보기(H2), 그리고 <strong>3. 백테스트</strong>에서 거래비용을 물려 보기.</p>';
+  }
+
+  // 금리 특징 A/B (가설 H2)
+  async function runRateAB() {
+    if (!state.data.rate) { status('#modelStatus', '이 데이터에는 금리가 없어 비교할 수 없습니다.'); return; }
+    const horizon = +$('#mHorizon').value;
+    const opt = { trainRatio: +$('#mRatio').value, threshold: +$('#mThreshold').value, modelOpt: { classWeight: $('#mWeight').checked, seed: 42 } };
+    const ids = selectedModels().filter(function (i) { return !ML.isRule(i); });
+    if (!ids.length) ids.push('boosting');
+    const extra = $('#mExtra').checked ? D.EXTRA_FEATURES : [];
+    const withRate = D.BASE_FEATURES.concat(D.RATE_FEATURES).concat(extra);
+    const without = D.BASE_FEATURES.concat(extra);
+
+    $('#runRateAB').disabled = true;
+    const rows = [];
+    for (let k = 0; k < ids.length; k++) {
+      status('#modelStatus', '금리 A/B 비교 중… ' + ML.modelName(ids[k]));
+      progress('#modelProg', k / ids.length);
+      await U.yield_();
+      const a = B.holdout(getSup(horizon, withRate), ids[k], opt);
+      await U.yield_();
+      const b = B.holdout(getSup(horizon, without), ids[k], opt);
+      const dAuc = a.metrics.auc - b.metrics.auc;
+      rows.push([
+        ML.modelName(ids[k]),
+        U.fmt(b.metrics.acc, 3), U.fmt(b.metrics.auc, 3),
+        U.fmt(a.metrics.acc, 3), U.fmt(a.metrics.auc, 3),
+        '<span class="' + (dAuc > 0 ? 'up' : 'down') + '">' + (dAuc >= 0 ? '+' : '') + U.fmt(dAuc, 3) + '</span>'
+      ]);
+    }
+    progress('#modelProg', null);
+    $('#runRateAB').disabled = false;
+    status('#modelStatus', '금리 A/B 비교 완료.');
+    const tw = $('#abTable'); tw.innerHTML = '';
+    tw.appendChild(U.table(['모델', '금리 없이 정확도', '금리 없이 AUC', '금리 넣고 정확도', '금리 넣고 AUC', 'AUC 변화'], rows));
+    $('#abResult').classList.remove('hidden');
+    const big = rows.filter(function (r) { return parseFloat(String(r[5]).replace(/<[^>]+>/g, '')) > 0.02; }).length;
+    const note = U.el('div', 'note' + (big ? '' : ' warn'));
+    note.innerHTML = big
+      ? '금리를 넣었을 때 AUC가 뚜렷이(0.02 이상) 오른 모델이 ' + big + '개 있습니다. H2가 반박되는 쪽입니다. 다른 기간에서도 같은지 꼭 확인하세요.'
+      : '금리를 넣어도 AUC가 뚜렷이 오르지 않았습니다. 가설 H2(금리를 넣어도 크게 나아지지 않는다)와 어울리는 결과입니다.';
+    tw.appendChild(note);
+  }
+
+  /* ==========================================================================
+   *  백테스트
+   * ========================================================================*/
+  async function runBacktest() {
+    const modelId = $('#bModel').value;
+    const horizon = +$('#bHorizon').value;
+    const cols = featureCols();
+    const sup = getSup(horizon, cols);
+    const opt = {
+      startFrac: +$('#bStart').value,
+      step: +$('#bStep').value,
+      threshold: +$('#bThreshold').value,
+      modelOpt: { classWeight: $('#mWeight').checked, seed: 42 },
+      onProgress: function (f, k, total) {
+        progress('#btProg', f);
+        status('#btStatus', '워크포워드 재학습 ' + k + '/' + total + '회…');
+      }
+    };
+    $('#runBacktest').disabled = true;
+    status('#btStatus', '준비 중…');
+    await U.yield_();
+    const wf = await B.walkForward(sup, modelId, opt);
+    const bt = B.backtest(sup, wf.proba, wf.start, {
+      costPerSide: (+$('#bCost').value) / 100,
+      slippage: (+$('#bSlip').value) / 100,
+      threshold: opt.threshold
+    });
+    progress('#btProg', null);
+    $('#runBacktest').disabled = false;
+    status('#btStatus', '완료. 재학습 ' + wf.retrains + '회 · 검증일 ' + bt.dates.length.toLocaleString('ko-KR') + '일 · ' +
+      (wf.elapsedMs / 1000).toFixed(1) + '초');
+    state.bt = { wf: wf, bt: bt, sup: sup, modelId: modelId, horizon: horizon };
+    renderBacktest();
+    setTab('backtest');
+  }
+
+  function renderBacktest() {
+    const st = state.bt;
+    if (!st) return;
+    const bt = st.bt, wf = st.wf;
+    $('#btResult').classList.remove('hidden');
+
+    const diff = bt.perfStrat.total - bt.perfBH.total;
+    const tiles = [
+      ['전략 누적수익 (비용 후)', U.signPct(bt.perfStrat.total, 1), '샤프 ' + U.fmt(bt.perfStrat.sharpe, 2)],
+      ['매수 후 보유', U.signPct(bt.perfBH.total, 1), '샤프 ' + U.fmt(bt.perfBH.sharpe, 2)],
+      ['차이', U.signPct(diff, 1), diff > 0 ? '전략이 앞섬' : '전략이 뒤짐'],
+      ['거래 / 총비용', U.comma(bt.nTrades) + '회', '누적 비용 ' + U.pct(bt.totalCost, 1) + ' · 보유비중 ' + U.pct(bt.exposure, 0)]
+    ];
+    const box = $('#btTiles'); box.innerHTML = '';
+    tiles.forEach(function (t, i) {
+      const el = U.el('div', 'tile');
+      el.appendChild(U.el('div', 'label', t[0]));
+      const v = U.el('div', 'value', t[1]);
+      if (i === 2) v.className += diff > 0 ? ' up' : ' down';
+      el.appendChild(v);
+      el.appendChild(U.el('div', 'sub', t[2]));
+      box.appendChild(el);
+    });
+
+    const labels = dateLabels(bt.dates);
+    const series = [
+      { name: '전략 (비용 후)', values: Array.from(bt.perfStrat.cum), color: C.seriesColor(0) },
+      { name: '매수 후 보유', values: Array.from(bt.perfBH.cum), color: C.seriesColor(1) },
+      { name: '전략 (비용 전)', values: Array.from(bt.perfGross.cum), color: C.seriesColor(2), dash: [5, 4] }
+    ];
+    C.line($('#chartEquity'), {
+      labels: labels, series: series, zeroLine: 1,
+      yFmt: function (v) { return U.fmt(v, 2) + '배'; }
+    });
+    const lg = $('#btLegend'); lg.innerHTML = '';
+    lg.appendChild(C.legend(series.map(function (s) { return { name: s.name, color: s.color }; })));
+
+    const rows = [
+      ['전략 (비용 후)', U.signPct(bt.perfStrat.total, 1), U.signPct(bt.perfStrat.cagr, 1), U.fmt(bt.perfStrat.sharpe, 2), U.pct(bt.perfStrat.mdd, 1), U.comma(bt.nTrades)],
+      ['전략 (비용 전)', U.signPct(bt.perfGross.total, 1), U.signPct(bt.perfGross.cagr, 1), U.fmt(bt.perfGross.sharpe, 2), U.pct(bt.perfGross.mdd, 1), U.comma(bt.nTrades)],
+      ['매수 후 보유', U.signPct(bt.perfBH.total, 1), U.signPct(bt.perfBH.cagr, 1), U.fmt(bt.perfBH.sharpe, 2), U.pct(bt.perfBH.mdd, 1), '1']
+    ];
+    const tw = $('#btTable'); tw.innerHTML = '';
+    tw.appendChild(U.table(['구분', '누적수익', '연평균(CAGR)', '샤프지수', '최대낙폭(MDD)', '거래 횟수'], rows));
+
+    // 비용 민감도
+    const levels = [0, 0.0005, 0.001, 0.002, 0.003, 0.005];
+    const sweep = B.costSweep(st.sup, wf.proba, wf.start, levels, { threshold: (+$('#bThreshold').value) });
+    C.bars($('#chartCost'), {
+      items: sweep.map(function (s) {
+        return {
+          label: '왕복 ' + (s.level * 100).toFixed(2) + '%',
+          value: s.strat,
+          color: s.strat >= bt.perfBH.total ? C.seriesColor(0) : C.mutedColor()
+        };
+      }),
+      baseValue: 0, vFmt: function (v) { return U.signPct(v, 0); }, padL: 100
+    });
+
+    const win = diff > 0;
+    $('#btReading').innerHTML =
+      '<h3>이 결과는 이렇게 읽습니다</h3>' +
+      '<div class="note ' + (win ? 'ok' : 'warn') + '">' +
+      '모델 <strong>' + ML.modelName(st.modelId) + '</strong>로 ' + wf.retrains + '번 재학습하며 굴린 결과, 비용 후 누적수익은 ' +
+      U.signPct(bt.perfStrat.total, 1) + '이고 매수 후 보유는 ' + U.signPct(bt.perfBH.total, 1) + '입니다. ' +
+      (win ? '이 구간에서는 전략이 앞섰습니다. 다만 기간을 바꾸면 쉽게 뒤집히므로 여러 구간에서 확인해야 합니다.'
+           : '전략이 매수 후 보유를 이기지 못했습니다. 가설 H4와 어울리는, 흔하고 정직한 결과입니다.') +
+      ' 거래비용으로만 누적 ' + U.pct(bt.totalCost, 1) + '를 지불했습니다.</div>' +
+      '<p class="small">워크포워드 검증 구간 정확도 ' + U.fmt(wf.metrics.acc, 3) + ' (기준선 ' + U.fmt(wf.metrics.baseline, 3) +
+      '), AUC ' + U.fmt(wf.metrics.auc, 3) + ' · 시장에 들어가 있던 시간 비중 ' + U.pct(bt.exposure, 0) + '</p>' +
+      (st.horizon !== 1 ? '<p class="small">예측 시계가 ' + st.horizon + '일인데 포지션은 매일 조정합니다. 신호와 보유 기간이 어긋나므로 해석에 주의하세요.</p>' : '');
+  }
+
+  /* ==========================================================================
+   *  모의투자
+   * ========================================================================*/
+  function stopAuto() {
+    if (state.simTimer) { clearInterval(state.simTimer); state.simTimer = null; }
+  }
+
+  async function startSim() {
+    const modelId = $('#sModel').value;
+    const cols = featureCols();
+    const sup = getSup(1, cols);
+    $('#startSim').disabled = true;
+    status('#simStatus', 'AI를 학습시키는 중… (미래를 보지 않도록 구간마다 다시 학습합니다)');
+    await U.yield_();
+    const wf = await B.walkForward(sup, modelId, {
+      startFrac: 0.6, step: 100, threshold: +$('#sThreshold').value,
+      modelOpt: { classWeight: $('#mWeight').checked, seed: 42 },
+      onProgress: function (f, k, total) { progress('#simProg', f); status('#simStatus', '학습 ' + k + '/' + total + '…'); }
+    });
+    progress('#simProg', null);
+    $('#startSim').disabled = false;
+
+    state.sim = S.create({
+      sup: sup, proba: wf.proba, start: wf.start,
+      cash: +$('#sCash').value, feeRate: (+$('#sFee').value) / 100,
+      threshold: +$('#sThreshold').value
+    });
+    state.sim.modelName = ML.modelName(modelId);
+    status('#simStatus', '준비 완료. ' + U.dstr(sup.dates[wf.start]) + '부터 ' +
+      U.dstr(sup.dates[sup.n - 1]) + '까지 ' + (sup.n - wf.start).toLocaleString('ko-KR') + '거래일을 진행합니다.');
+    $('#simBoard').classList.remove('hidden');
+    renderSim();
+    setTab('sim');
+  }
+
+  function renderSim() {
+    const sim = state.sim;
+    if (!sim) return;
+    const px = S.price(sim), h = sim.hist;
+    const total = sim.user.value(px);
+    const prevPx = sim.t > 0 ? sim.sup.close[sim.t - 1] : px;
+
+    $('#simEquity').textContent = U.won(total);
+    const pl = total / sim.initial - 1;
+    const sub = $('#simEquitySub');
+    sub.textContent = '시작 ' + U.won(sim.initial) + ' 대비 ' + U.signPct(pl, 2);
+    sub.className = 'sub ' + (pl >= 0 ? 'up' : 'down');
+
+    $('#simDate').textContent = U.dstr(S.date(sim));
+    $('#simPrice').textContent = U.comma(px);
+    const chg = px / prevPx - 1;
+    const ce = $('#simChange');
+    ce.textContent = '전일 대비 ' + U.signPct(chg, 2);
+    ce.className = 'sub tiny ' + (chg >= 0 ? 'up' : 'down');
+
+    const w = sim.user.weight(px);
+    $('#simWeightBar').style.width = Math.round(w * 100) + '%';
+    $('#simWeightText').textContent = '주식 ' + U.pct(w, 0) + ' · 현금 ' + U.won(sim.user.cash);
+
+    const p = S.aiProbaNow(sim);
+    $('#simProba').textContent = isFinite(p) ? U.pct(p, 1) : '—';
+    $('#simProbaBar').style.width = (isFinite(p) ? Math.round(p * 100) : 50) + '%';
+    $('#simProbaBar').style.background = isFinite(p) && p >= sim.threshold ? 'var(--series-1)' : 'var(--text-muted)';
+    $('#simSignal').textContent = isFinite(p)
+      ? (p >= sim.threshold ? sim.modelName + ': 내일 보유 권장' : sim.modelName + ': 내일 현금 권장')
+      : '예측 없음';
+
+    const left = sim.sup.n - 1 - sim.t;
+    $('#simProgressText').textContent = '남은 거래일 ' + left.toLocaleString('ko-KR') + '일 · 진행 ' +
+      (h.dates.length).toLocaleString('ko-KR') + '일 · 내 거래 ' + sim.user.trades + '회 (비용 ' + U.won(sim.user.costPaid) + ')';
+    $$('[data-step]').forEach(function (b) { b.disabled = S.done(sim); });
+    $$('[data-act]').forEach(function (b) { b.disabled = S.done(sim); });
+
+    // 자산 곡선
+    const labels = dateLabels(h.dates);
+    const series = [
+      { name: '내 계좌', values: h.user, color: C.seriesColor(0) },
+      { name: 'AI 자동매매', values: h.ai, color: C.seriesColor(1) },
+      { name: '사서 들고 있기', values: h.bh, color: C.seriesColor(2), dash: [5, 4] }
+    ];
+    C.line($('#chartSim'), {
+      labels: labels, series: series, zeroLine: sim.initial,
+      yFmt: function (v) { return U.compact(v); },
+      tipFmt: function (v) { return U.won(v); }
+    });
+    const lg = $('#simLegend'); lg.innerHTML = '';
+    lg.appendChild(C.legend(series.map(function (s) { return { name: s.name, color: s.color }; })));
+
+    C.line($('#chartSimPrice'), {
+      labels: labels,
+      series: [{ name: '가격', values: h.price, color: C.seriesColor(0), area: true }],
+      yFmt: function (v) { return U.compact(v); }
+    });
+
+    // 성적표
+    const sm = S.summary(sim);
+    const rows = sm.map(function (s) {
+      const row = [s.name, U.won(s.final),
+        '<span class="' + (s.total >= 0 ? 'up' : 'down') + '">' + U.signPct(s.total, 2) + '</span>',
+        U.signPct(s.cagr, 1), U.fmt(s.sharpe, 2), U.pct(s.mdd, 1), U.comma(s.trades)];
+      return row;
+    });
+    const tw = $('#simTable'); tw.innerHTML = '';
+    tw.appendChild(U.table(['구분', '평가금액', '누적수익', '연평균', '샤프', '최대낙폭', '거래'], rows));
+
+    // 거래 기록
+    const lw = $('#simLog');
+    if (!sim.log.length) { lw.innerHTML = '<p class="small">아직 거래가 없습니다. 위 버튼으로 사고팔아 보세요.</p>'; }
+    else {
+      lw.innerHTML = '';
+      const lr = sim.log.slice().reverse().map(function (t) {
+        return [U.dstr(t.date), t.type, U.comma(t.price), U.fmt(Math.abs(t.qty), 2) + '주', U.won(t.value)];
+      });
+      lw.appendChild(U.table(['날짜', '구분', '체결가', '수량', '거래 후 총자산'], lr));
+    }
+
+    if (S.done(sim)) {
+      stopAuto();
+      const my = sm[0], ai = sm[1], bh = sm[2];
+      const best = [my, ai, bh].slice().sort(function (a, b) { return b.total - a.total; })[0];
+      status('#simStatus', '끝까지 진행했습니다. 1위는 ' + best.name + ' (' + U.signPct(best.total, 2) + ') 입니다. ' +
+        '내 계좌 ' + U.signPct(my.total, 2) + ' / AI ' + U.signPct(ai.total, 2) + ' / 매수보유 ' + U.signPct(bh.total, 2));
+    }
+  }
+
+  function bindSim() {
+    $$('[data-act]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        const sim = state.sim; if (!sim) return;
+        const a = b.dataset.act;
+        if (a === 'buy1') S.buy(sim, 1);
+        else if (a === 'buy05') S.buy(sim, 0.5);
+        else if (a === 'sell05') S.sell(sim, 0.5);
+        else if (a === 'sell1') S.sell(sim, 1);
+        renderSim();
+      });
+    });
+    $$('[data-step]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        const sim = state.sim; if (!sim) return;
+        const follow = $('#simFollow').checked;
+        const s = b.dataset.step;
+        stopAuto();
+        if (s === 'end') {
+          // 한 번에 다 돌리면 화면이 멈추므로 조금씩 나눠 진행
+          state.simTimer = setInterval(function () {
+            const moved = S.stepMany(sim, 60, follow);
+            renderSim();
+            if (!moved || S.done(sim)) stopAuto();
+          }, 16);
+        } else {
+          S.stepMany(sim, +s, follow);
+          renderSim();
+        }
+      });
+    });
+  }
+
+  /* ==========================================================================
+   *  변동성 (Phase 1-c)
+   * ========================================================================*/
+  // 미국 FOMC 정책 발표일 (federalreserve.gov 원문 기준, 2015~2024) — phase1c와 동일
+  const FOMC_DATES = ('2015-01-28,2015-03-18,2015-04-29,2015-06-17,2015-07-29,2015-09-17,2015-10-28,2015-12-16,' +
+    '2016-01-27,2016-03-16,2016-04-27,2016-06-15,2016-07-27,2016-09-21,2016-11-02,2016-12-14,' +
+    '2017-02-01,2017-03-15,2017-05-03,2017-06-14,2017-07-26,2017-09-20,2017-11-01,2017-12-13,' +
+    '2018-01-31,2018-03-21,2018-05-02,2018-06-13,2018-08-01,2018-09-26,2018-11-08,2018-12-19,' +
+    '2019-01-30,2019-03-20,2019-05-01,2019-06-19,2019-07-31,2019-09-18,2019-10-30,2019-12-11,' +
+    '2020-01-29,2020-03-03,2020-03-16,2020-04-29,2020-06-10,2020-07-29,2020-09-16,2020-11-05,2020-12-16,' +
+    '2021-01-27,2021-03-17,2021-04-28,2021-06-16,2021-07-28,2021-09-22,2021-11-03,2021-12-15,' +
+    '2022-01-26,2022-03-16,2022-05-04,2022-06-15,2022-07-27,2022-09-21,2022-11-02,2022-12-14,' +
+    '2023-02-01,2023-03-22,2023-05-03,2023-06-14,2023-07-26,2023-09-20,2023-11-01,2023-12-13,' +
+    '2024-01-31,2024-03-20,2024-05-01,2024-06-12,2024-07-31,2024-09-18,2024-11-07,2024-12-18').split(',');
+
+  function eventMask(data, nextDay) {
+    const n = data.close.length;
+    const mask = new Uint8Array(n);
+    let label = '';
+    if (data.isPolicyDay) {                        // 데모 데이터는 발표일을 직접 알고 있음
+      for (let i = 0; i < n; i++) if (data.isPolicyDay[i]) { mask[i] = 1; if (nextDay && i + 1 < n) mask[i + 1] = 1; }
+      label = '가상 정책 발표일';
+    } else {
+      const set = {};
+      FOMC_DATES.forEach(function (d) { set[d] = 1; });
+      for (let i = 0; i < n; i++) {
+        if (set[U.dstr(data.dates[i])]) { mask[i] = 1; if (nextDay && i + 1 < n) mask[i + 1] = 1; }
+      }
+      label = 'FOMC 발표일';
+    }
+    return { mask: mask, label: label };
+  }
+
+  function runVol() {
+    const d = state.data;
+    const retAll = state.feats['return'];
+    const idx = [];
+    for (let i = 1; i < retAll.length; i++) if (isFinite(retAll[i])) idx.push(i);
+    const ret = Float64Array.from(idx.map(function (i) { return retAll[i]; }));
+    if (ret.length < 200) { status('#volStatus', '표본이 너무 적습니다.'); return; }
+
+    status('#volStatus', 'GARCH(1,1) 추정 중…');
+    const g = M.garch(ret);
+    const ew = M.ewma(ret, 0.94);
+    const sg = M.volScores(g.sigma, ret), se = M.volScores(ew, ret);
+    const ev = eventMask(d, $('#volNextDay').checked);
+
+    const evAbs = [], noAbs = [];
+    idx.forEach(function (i, k) {
+      (ev.mask[i] ? evAbs : noAbs).push(Math.abs(ret[k]));
+    });
+    const tt = U.welchT(evAbs, noAbs);
+
+    $('#volResult').classList.remove('hidden');
+    const ann = Math.sqrt(M.TRADING_DAYS) * 100;
+    const tiles = [
+      ['α (충격 반응)', U.fmt(g.alpha, 3), '어제 충격이 오늘 변동성에 주는 영향'],
+      ['β (지속성)', U.fmt(g.beta, 3), '어제 변동성이 이어지는 정도'],
+      ['α+β', U.fmt(g.persistence, 3), '1에 가까울수록 오래 남습니다'],
+      ['장기 평균 변동성', U.fmt(g.longRunVol * ann, 1) + '%', '연율화 기준']
+    ];
+    const box = $('#volTiles'); box.innerHTML = '';
+    tiles.forEach(function (t) {
+      const el = U.el('div', 'tile');
+      el.appendChild(U.el('div', 'label', t[0]));
+      el.appendChild(U.el('div', 'value', t[1]));
+      el.appendChild(U.el('div', 'sub', t[2]));
+      box.appendChild(el);
+    });
+
+    const labels = idx.map(function (i) { return U.dstr(d.dates[i]).slice(2, 7); });
+    const series = [
+      { name: 'GARCH(1,1)', values: Array.prototype.map.call(g.sigma, function (v) { return v * ann; }), color: C.seriesColor(0) },
+      { name: 'EWMA(λ=0.94)', values: Array.prototype.map.call(ew, function (v) { return v * ann; }), color: C.seriesColor(1), dash: [5, 4] }
+    ];
+    C.line($('#chartVol'), { labels: labels, series: series, yFmt: function (v) { return U.fmt(v, 0) + '%'; } });
+    const lg = $('#volLegend'); lg.innerHTML = '';
+    lg.appendChild(C.legend(series.map(function (s) { return { name: s.name, color: s.color }; })));
+
+    C.hist($('#chartVolHist'), [
+      { values: evAbs, color: C.seriesColor(1) },
+      { values: noAbs, color: C.seriesColor(0) }
+    ], { xFmt: function (v) { return U.pct(v, 1); } });
+    const hl = $('#volHistLegend'); hl.innerHTML = '';
+    hl.appendChild(C.legend([
+      { name: ev.label + ' 전후 (' + evAbs.length + '일)', color: C.seriesColor(1) },
+      { name: '평소 (' + noAbs.length + '일)', color: C.seriesColor(0) }
+    ]));
+
+    const sig = isFinite(tt.p) && tt.p < 0.05;
+    $('#volTest').innerHTML =
+      '<div class="note ' + (sig ? 'ok' : 'warn') + '">' +
+      '<strong>가설 H5 — ' + ev.label + '에 시장이 더 출렁이는가?</strong><br>' +
+      ev.label + ' 전후 평균 |수익률| ' + U.pct(tt.ma, 3) + ' vs 평소 ' + U.pct(tt.mb, 3) +
+      ' · t = ' + U.fmt(tt.t, 2) + ', p = ' + U.fmt(tt.p, 4) + '<br>' +
+      (sig ? '차이가 통계적으로 유의합니다(p&lt;0.05). H5를 지지하는 결과입니다.'
+           : '차이가 통계적으로 유의하지 않습니다. 표본이 적어서일 수도 있으니 기간을 늘려 확인해 보세요.') +
+      '</div>' +
+      '<p class="small">변동성 예측 성적(낮을수록 좋음) — GARCH: MSE ' + sg.mse.toExponential(2) + ', QLIKE ' + U.fmt(sg.qlike, 3) +
+      ' / EWMA: MSE ' + se.mse.toExponential(2) + ', QLIKE ' + U.fmt(se.qlike, 3) + '</p>' +
+      (d.meta.synthetic ? '<p class="small">지금은 <strong>가상 데이터</strong>의 가상 발표일로 계산한 결과입니다. 실제 FOMC 분석은 실제 데이터를 넣어야 합니다.</p>' : '');
+
+    status('#volStatus', '완료. ω=' + g.omega.toExponential(2) + ', α=' + U.fmt(g.alpha, 3) + ', β=' + U.fmt(g.beta, 3));
+  }
+
+  /* ==========================================================================
+   *  정적 표 (가설 / 용어 / 대응표)
+   * ========================================================================*/
+  const HYPOTHESES = [
+    ['H1', '모델마다 정확도·속도·해석 용이성에 장단점이 있다', '한 모델이 세 가지 모두 최고다', '2. 모델 비교'],
+    ['H2', '금리 정보를 넣어도 정확도가 크게 오르지 않는다 (효율적 시장)', '금리를 넣으니 정확도가 뚜렷이 오른다', '2. 모델 비교 → 금리 A/B'],
+    ['H3', "금리 '수준'이 중요해 보이는 건 사실 '시기'를 알려주는 것이다", '시기를 통제해도 금리 수준이 계속 중요하다', '2. 모델 비교 (변수 중요도)'],
+    ['H4', '거래비용을 물면 전략이 매수 후 보유를 못 이긴다', '비용을 빼고도 전략이 확실히 낫다', '3. 백테스트'],
+    ['H5', '금리 발표일에는 시장이 평소보다 더 출렁인다', '발표일과 평소가 통계적으로 차이 없다', '5. 변동성'],
+    ['H6', '비둘기 발표 뒤 주가가 매파 발표 뒤보다 더 오른다', '두 경우의 차이가 통계적으로 의미 없다', '파이썬 phase2 (NLP 필요)'],
+    ['H7', '종목 순위를 맞히는 것이 지수 방향 맞히기보다 유용하다', '순위 전략이 코스피를 못 이긴다', '파이썬 phase3 (여러 종목 필요)']
+  ];
+
+  const GLOSSARY = [
+    ['정확도 (Accuracy)', '100번 예측해서 몇 번 맞혔는지의 비율. 55번 맞히면 55%.'],
+    ['기준선 (Baseline)', '아무 생각 없이 찍었을 때의 점수. 오르는 날이 더 많으면 "무조건 오른다"만 반복해도 어느 정도 맞는다. 우리 모델은 이 점수를 넘어야 의미가 있다.'],
+    ['정밀도 (Precision)', '모델이 "오른다"고 한 것 중 실제로 오른 비율.'],
+    ['재현율 (Recall)', '실제로 오른 날 중 모델이 잡아낸 비율.'],
+    ['F1 점수', '정밀도와 재현율을 균형 있게 합친 점수.'],
+    ['혼동행렬 (Confusion Matrix)', '맞힌 것과 틀린 것을 네 칸짜리 표로 정리한 것.'],
+    ['ROC 곡선', "판정 기준(문턱값)을 바꿔가며 '오른다고 맞게 잡은 비율'과 '틀리게 잡은 비율'을 그린 그래프. 곡선이 왼쪽 위에 붙을수록 잘 구별하는 모델이다."],
+    ['AUC', 'ROC 곡선 아래의 면적. 0.5면 찍기 수준(실력 없음), 1.0이면 완벽. 정확도에 잘 속지 않아 주 지표로 쓴다.'],
+    ['MCC / 균형정확도', '한쪽으로 치우친 데이터에서도 잘 속지 않는 지표. MCC가 0, 균형정확도가 0.5면 찍기 수준.'],
+    ['상승예측비율', '모델이 "오른다"고 답한 비율. 0.9를 넘으면 예측이 아니라 다수결을 흉내내는 중이라는 신호.'],
+    ['p값 (p-value)', "이 결과가 '순전히 우연'일 가능성을 나타내는 숫자. 작을수록(보통 0.05 미만) 우연으로 보기 어렵다는 뜻이다."],
+    ['t검정', '두 집단의 평균이 통계적으로 다른지 확인하는 방법.'],
+    ['다중검정', '여러 번 시도할수록 그중 하나가 우연히 좋아 보일 확률이 커지는 문제. 그래서 시도 횟수를 기록해야 한다.'],
+    ['데이터 누수 (Data Leakage)', '미래 정보가 학습에 새어드는 것. 시험 문제를 미리 본 것과 같아 점수가 가짜로 높아진다.'],
+    ['과적합 (Overfitting)', '연습문제만 외워서 처음 보는 문제는 틀리는 것.'],
+    ['정상성 (Stationarity)', '값의 성질이 시간이 지나도 크게 변하지 않는 것. 그래서 주가 자체 대신 "평균 대비 몇 %"를 쓴다.'],
+    ['예측 시계 (HORIZON)', '며칠 뒤를 맞힐지. 1이면 내일, 20이면 약 한 달 뒤.'],
+    ['하이퍼파라미터', '모델이 스스로 배우는 값이 아니라, 사람이 미리 정해주는 설정값.'],
+    ['백테스트 (Backtest)', '과거 데이터로 "이 전략을 썼다면 어땠을까"를 돌려보는 모의실험.'],
+    ['워크포워드 검증', '한 번 학습하고 끝내지 않고, 시간이 지나며 새 데이터로 다시 학습하는 더 현실적인 검증 방식.'],
+    ['이벤트 스터디', '특정 사건(예: FOMC 발표) 전후로 주가가 어떻게 움직였는지 비교하는 분석.'],
+    ['거래비용', '주식을 사고팔 때마다 떼이는 수수료. 자주 거래하면 무시할 수 없는 크기가 된다.'],
+    ['슬리피지', '주문한 가격과 실제 체결 가격의 차이. 비용처럼 수익을 깎는다.'],
+    ['샤프지수 (Sharpe)', '위험(출렁임) 대비 수익. 높을수록 안정적으로 번 것.'],
+    ['최대낙폭 (MDD)', '고점 대비 가장 크게 떨어진 폭.'],
+    ['변동성 (Volatility)', '가격이 얼마나 심하게 오르내리는지.'],
+    ['MSE / QLIKE', '변동성 예측이 얼마나 정확한지 재는 지표(정확도 대신 사용). 둘 다 낮을수록 좋다.'],
+    ['GARCH', '오늘의 변동성이 어제의 충격과 어제의 변동성에 의존한다고 보는 모델. "변동성은 뭉쳐서 온다"를 잡아낸다.'],
+    ['매파 / 비둘기', '매파(hawkish)는 금리를 올리자는 긴축, 비둘기(dovish)는 금리를 내리자는 완화.'],
+    ['서프라이즈 (Surprise)', "발표가 시장의 '예상'과 얼마나 달랐는가. 금리 자체보다 '예상 밖'인지가 주가를 더 움직인다."],
+    ['생존 편향', '살아남은 것만 보고 판단하는 착각.'],
+    ['클래스 가중치', '한쪽 답이 많을 때 적은 쪽에 더 큰 무게를 줘서, 모델이 다수결만 흉내내지 못하게 하는 장치.'],
+    ['문턱값 (Threshold)', '확률이 얼마 이상일 때 "상승"이라고 판정할지 정하는 기준. 보통 0.5.']
+  ];
+
+  const MAPPING = [
+    ['phase1a_model_comparison.py', '2. 모델 비교', '4개 모델 비교, AUC·혼동행렬·변수 중요도, 예측 시계 실험'],
+    ['phase1b_backtest.py', '3. 백테스트', '워크포워드 재학습 + 거래비용·슬리피지 반영 백테스트'],
+    ['phase1c_garch_volatility.py', '5. 변동성', 'GARCH(1,1) 추정, 정책 발표일 전후 변동성 비교(H5)'],
+    ['phase2_event_study.py', '(웹 미지원)', 'FOMC 성명서 NLP가 필요해 파이썬으로 실행하세요'],
+    ['phase3_cross_section.py', '(웹 미지원)', '여러 종목 데이터가 필요해 파이썬으로 실행하세요'],
+    ['—', '4. 모의투자', '웹 전용. 워크포워드 예측을 그대로 써서 직접 매매해 보는 기능']
+  ];
+
+  function renderStaticTables() {
+    $('#hypoTable').appendChild(U.table(['#', '가설', '이 가설이 틀렸다고 볼 신호', '확인하는 곳'],
+      HYPOTHESES.map(function (h) { return [h[0], h[1], h[2], h[3]]; }), { text: true }));
+
+    const render = function (filter) {
+      const box = $('#glossTable'); box.innerHTML = '';
+      const rows = GLOSSARY.filter(function (g) {
+        if (!filter) return true;
+        const f = filter.toLowerCase();
+        return g[0].toLowerCase().indexOf(f) >= 0 || g[1].toLowerCase().indexOf(f) >= 0;
+      }).map(function (g) { return [g[0], g[1]]; });
+      box.appendChild(U.table(['용어', '쉬운 설명'], rows, { text: true }));
+      $$('#glossTable td').forEach(function (td) { td.style.whiteSpace = 'normal'; });
+    };
+    render('');
+    $('#glossSearch').addEventListener('input', function () { render(this.value.trim()); });
+
+    $('#mapTable').appendChild(U.table(['파이썬 파일', '웹 탭', '내용'], MAPPING.map(function (m) { return m.slice(); }), { text: true }));
+    $$('#mapTable td, #hypoTable td').forEach(function (td) { td.style.whiteSpace = 'normal'; });
+  }
+
+  /* ==========================================================================
+   *  초기화
+   * ========================================================================*/
+  function buildModelChips() {
+    const box = $('#modelChips');
+    const defaults = { logistic: 1, forest: 1, boosting: 1, momentum: 1, alwaysup: 1 };
+    ML.MODELS.forEach(function (m) {
+      const l = U.el('label', 'chip' + (defaults[m.id] ? ' on' : ''));
+      l.title = m.desc;
+      const i = U.el('input');
+      i.type = 'checkbox'; i.value = m.id; i.checked = !!defaults[m.id];
+      i.addEventListener('change', function () { l.classList.toggle('on', i.checked); });
+      l.appendChild(i);
+      l.appendChild(document.createTextNode(m.name));
+      box.appendChild(l);
+    });
+
+    // 백테스트·모의투자용 모델 선택 상자
+    [['#bModel', 'boosting'], ['#sModel', 'forest']].forEach(function (pair) {
+      const sel = $(pair[0]);
+      ML.MODELS.forEach(function (m) {
+        const o = U.el('option', '', m.name + (ML.isRule(m.id) ? ' (기준선)' : ''));
+        o.value = m.id;
+        sel.appendChild(o);
+      });
+      sel.value = pair[1];
+    });
+  }
+
+  function bindControls() {
+    $('#tabs').addEventListener('click', function (e) {
+      const b = e.target.closest('button[data-tab]');
+      if (b) setTab(b.dataset.tab);
+    });
+    $$('[data-goto]').forEach(function (b) {
+      b.addEventListener('click', function () { setTab(b.dataset.goto); });
+    });
+
+    // 데이터 소스 전환
+    $$('#sourceChips input').forEach(function (r) {
+      r.addEventListener('change', function () {
+        $$('#sourceChips .chip').forEach(function (c) { c.classList.toggle('on', c.querySelector('input').checked); });
+        const v = r.value;
+        $('#srcDemo').classList.toggle('hidden', v !== 'demo');
+        $('#srcFile').classList.toggle('hidden', v !== 'file');
+        $('#srcPaste').classList.toggle('hidden', v !== 'paste');
+        $('#srcNet').classList.toggle('hidden', v !== 'net');
+      });
+    });
+
+    $('#demoSignal').addEventListener('input', function () { $('#demoSignalV').textContent = (+this.value).toFixed(2); });
+    $('#mRatio').addEventListener('input', function () { $('#mRatioV').textContent = (+this.value).toFixed(2); });
+    $('#mThreshold').addEventListener('input', function () { $('#mThresholdV').textContent = (+this.value).toFixed(2); });
+    $('#bThreshold').addEventListener('input', function () { $('#bThresholdV').textContent = (+this.value).toFixed(2); });
+    $('#sThreshold').addEventListener('input', function () { $('#sThresholdV').textContent = (+this.value).toFixed(2); });
+    $('#bStart').addEventListener('input', function () { $('#bStartV').textContent = Math.round(+this.value * 100) + '%'; });
+
+    $('#loadDemo').addEventListener('click', function () {
+      setData(D.makeDemo({ n: +$('#demoN').value, signal: +$('#demoSignal').value, seed: +$('#demoSeed').value }));
+    });
+
+    $('#csvFile').addEventListener('change', function () {
+      const f = this.files[0];
+      if (!f) return;
+      const rd = new FileReader();
+      rd.onload = function () {
+        try { setData(D.parseCSV(rd.result, f.name)); }
+        catch (e) { alert('CSV를 읽지 못했습니다: ' + e.message); }
+      };
+      rd.readAsText(f, 'utf-8');
+    });
+
+    $('#loadPaste').addEventListener('click', function () {
+      try { setData(D.parseCSV($('#csvText').value, '붙여넣은 데이터')); }
+      catch (e) { alert('CSV를 읽지 못했습니다: ' + e.message); }
+    });
+
+    $('#netProvider').addEventListener('change', function () {
+      const v = this.value;
+      $('#fKey').classList.toggle('hidden', v === 'stooq');
+      $('#fRate').classList.toggle('hidden', v === 'stooq');
+      $('#netSymbol').value = v === 'av' ? 'SPY' : (v === 'fred' ? 'SP500' : '^spx');
+      $('#netRate').value = v === 'av' ? '2year' : 'DGS2';
+    });
+
+    $('#loadNet').addEventListener('click', function () {
+      const v = $('#netProvider').value;
+      const sym = $('#netSymbol').value.trim();
+      const key = $('#netKey').value.trim();
+      const rate = $('#netRate').value.trim();
+      status('#netStatus', '불러오는 중…');
+      const onLog = function (m) { status('#netStatus', m); };
+      let p;
+      if (v === 'av') {
+        if (!key) { status('#netStatus', 'Alpha Vantage 키를 입력하세요.'); return; }
+        p = D.fetchAlphaVantage(sym, key, rate, onLog);
+      } else if (v === 'fred') {
+        if (!key) { status('#netStatus', 'FRED 키를 입력하세요.'); return; }
+        p = D.fetchFred(sym, rate || 'DGS2', key, '2010-01-01', U.dstr(new Date()), onLog);
+      } else {
+        p = D.fetchStooq(sym);
+      }
+      p.then(function (data) { setData(data); status('#netStatus', '불러왔습니다: ' + data.meta.name); })
+        .catch(function (e) {
+          status('#netStatus', '실패: ' + e.message + ' — 브라우저 보안 정책(CORS)이나 키 문제일 수 있습니다. CSV 방식을 대신 써 보세요.');
+        });
+    });
+
+    $('#runModels').addEventListener('click', function () { runModels(false); });
+    $('#runRateAB').addEventListener('click', runRateAB);
+    $('#runBacktest').addEventListener('click', runBacktest);
+    $('#startSim').addEventListener('click', startSim);
+    $('#runVol').addEventListener('click', runVol);
+    bindSim();
+
+    // 한 번에 실행
+    $('#quickRun').addEventListener('click', async function () {
+      const btn = this;
+      btn.disabled = true;
+      try {
+        if (!state.data) setData(D.makeDemo({ n: 3800, signal: 0.06, seed: 42 }));
+        status('#quickStatus', '모델 학습 중… 잠시만 기다려 주세요.');
+        progress('#quickProg', 0.15);
+        await U.yield_();
+        await runModels(true);
+        progress('#quickProg', 0.6);
+        status('#quickStatus', '백테스트 실행 중…');
+        await U.yield_();
+        await runBacktest();
+        progress('#quickProg', null);
+        status('#quickStatus', '완료했습니다. 위 탭에서 결과를 확인하세요.');
+        setTab('models');
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  }
+
+  function init() {
+    initTheme();
+    buildModelChips();
+    bindControls();
+    renderStaticTables();
+    // 처음 열면 바로 볼 수 있도록 데모 데이터를 미리 넣어 둡니다.
+    setData(D.makeDemo({ n: 3800, signal: 0.06, seed: 42 }));
+  }
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+  else init();
+
+  root.app = { state: state, setTab: setTab };
+})(window.FRSP = window.FRSP || {});
+
+</script>
+</body>
+</html>

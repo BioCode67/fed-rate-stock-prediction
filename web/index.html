@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="ko" data-theme="">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>금리와 주가, 그리고 머신러닝 — 주가 예측·모의투자 실험실</title>
+<meta name="description" content="금리 기대와 주가 방향 예측을 여러 모델로 비교하고, 거래비용을 물린 백테스트와 모의투자까지 브라우저에서 바로 확인하는 교육용 도구.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>📈</text></svg>">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="top">
+  <div class="top-inner">
+    <div class="brand">금리와 주가, 그리고 머신러닝
+      <small>영남대 SW중심대학사업단 AI·SW 러닝메이트 멘토링 · 교육/연구용</small>
+    </div>
+    <div class="top-spacer"></div>
+    <span class="badge demo" id="dataBadge"><span class="dot"></span><span id="dataBadgeText">데이터 없음</span></span>
+    <button class="iconbtn" id="themeBtn" title="밝게/어둡게">화면 전환</button>
+  </div>
+  <nav class="tabs" id="tabs">
+    <button data-tab="home" class="on">개요</button>
+    <button data-tab="data">1. 데이터</button>
+    <button data-tab="models">2. 모델 비교</button>
+    <button data-tab="backtest">3. 백테스트</button>
+    <button data-tab="sim">4. 모의투자</button>
+    <button data-tab="vol">5. 변동성</button>
+    <button data-tab="glossary">용어</button>
+  </nav>
+</header>
+
+<div class="wrap">
+
+<!-- ======================= 개요 ======================= -->
+<section class="panel on" id="panel-home">
+  <div class="card">
+    <h1 class="mb0">주가는 정말 예측할 수 있을까?</h1>
+    <p class="card-sub">데이터를 넣고, 모델을 학습시키고, 거래비용까지 물려서 직접 확인해 보세요.</p>
+    <p>이 사이트는 <code>phase1a~phase3</code> 파이썬 연구 코드를 브라우저에서 그대로 돌려 볼 수 있게 옮긴 것입니다.
+      설치할 것도, API 키도 없이 바로 시작할 수 있고, 원하면 실제 시장 데이터를 넣어 다시 확인할 수 있습니다.</p>
+    <div class="sim-actions">
+      <button class="btn big" id="quickRun">지금 바로 실행해 보기</button>
+      <button class="btn ghost big" data-goto="data">데이터부터 고르기</button>
+    </div>
+    <div class="status" id="quickStatus"></div>
+    <div class="progress" id="quickProg"><div></div></div>
+  </div>
+
+  <div class="grid c4 keep2">
+    <div class="tile"><div class="label">1단계 · 데이터</div><div class="value">주가 + 금리</div><div class="sub">데모(가상) / CSV / 인터넷</div></div>
+    <div class="tile"><div class="label">2단계 · 모델 비교</div><div class="value">7가지</div><div class="sub">AI 4종 + 기준선 3종</div></div>
+    <div class="tile"><div class="label">3단계 · 백테스트</div><div class="value">비용 반영</div><div class="sub">워크포워드 재학습</div></div>
+    <div class="tile"><div class="label">4단계 · 모의투자</div><div class="value">직접 매매</div><div class="sub">AI·매수보유와 대결</div></div>
+  </div>
+
+  <div class="card">
+    <h2>이 프로젝트의 목표</h2>
+    <p>돈을 버는 것이 아니라, <strong>시장이 왜 이렇게 예측하기 어려운지를 데이터로 확인하는 것</strong>이 목적입니다.
+      그래서 다음 원칙을 지킵니다.</p>
+    <ul>
+      <li>정확도가 낮게 나와도 실패가 아닙니다. 오히려 정직한 결과입니다.</li>
+      <li>정확도가 지나치게 높으면(예: 90%) 데이터 누수를 의심해야 합니다. 이 사이트는 그런 신호를 자동으로 경고합니다.</li>
+      <li>학습은 언제나 과거만 봅니다. 무작위로 섞지 않고 시간 순서대로 나눕니다.</li>
+      <li>구할 수 없는 데이터는 지어내지 않습니다. 데모 데이터는 화면 어디서나 <em>가상</em>이라고 표시합니다.</li>
+    </ul>
+    <div class="note warn"><strong>주의.</strong> 교육·연구용입니다. 실제 투자 판단에 사용하지 마십시오.
+      백테스트 결과가 좋아도 미래 수익을 보장하지 않습니다.</div>
+  </div>
+
+  <div class="card">
+    <h2>검증하려는 가설</h2>
+    <p class="small">결론이 아니라 확인할 질문입니다. 데이터가 지지할 수도, 반박할 수도 있으며 어느 쪽이든 그대로 봅니다.</p>
+    <div class="tbl-wrap" id="hypoTable"></div>
+  </div>
+
+  <div class="card">
+    <h2>결과를 읽는 법</h2>
+    <ol>
+      <li><strong>AUC를 먼저 봅니다.</strong> 정확도는 상승일이 많으면 "무조건 오른다"만 찍어도 높아져 속기 쉽습니다. AUC가 0.5면 판별력이 전혀 없다는 뜻입니다.</li>
+      <li><strong>상승예측비율을 확인합니다.</strong> 모델이 90% 이상을 "상승"으로 찍고 있으면 예측이 아니라 다수결 흉내입니다.</li>
+      <li><strong>정확도와 기준선을 비교합니다.</strong> 비교 대상은 동전 던지기(0.5)가 아니라 기준선입니다.</li>
+      <li><strong>백테스트에서 수익이 났어도</strong> 거래비용을 빼면 사라질 수 있습니다.</li>
+    </ol>
+  </div>
+</section>
+
+<!-- ======================= 데이터 ======================= -->
+<section class="panel" id="panel-data">
+  <div class="card">
+    <h2>데이터 고르기</h2>
+    <p class="card-sub">아무것도 설치하지 않고 시작하려면 데모(가상) 데이터를, 실제 시장을 보려면 CSV나 인터넷 불러오기를 쓰세요.</p>
+    <div class="chips" id="sourceChips">
+      <label class="chip on"><input type="radio" name="src" value="demo" checked>데모(가상) 데이터</label>
+      <label class="chip"><input type="radio" name="src" value="file">CSV 파일 올리기</label>
+      <label class="chip"><input type="radio" name="src" value="paste">CSV 붙여넣기</label>
+      <label class="chip"><input type="radio" name="src" value="net">인터넷에서 받기</label>
+    </div>
+
+    <!-- 데모 -->
+    <div id="srcDemo" class="src-box" style="margin-top:14px">
+      <div class="controls">
+        <div class="field"><label for="demoN">거래일 수</label>
+          <select id="demoN"><option value="1300">약 5년 (1,300일)</option><option value="2600">약 10년 (2,600일)</option><option value="3800" selected>약 15년 (3,800일)</option></select></div>
+        <div class="field"><label for="demoSignal">숨은 신호 강도 <span id="demoSignalV" class="tiny">0.06</span></label>
+          <input type="range" id="demoSignal" min="0" max="0.30" step="0.01" value="0.06"></div>
+        <div class="field"><label for="demoSeed">난수 시드</label><input type="number" id="demoSeed" value="42" min="1" step="1"></div>
+        <button class="btn" id="loadDemo">이 데이터로 시작</button>
+      </div>
+      <div class="note">숨은 신호 강도를 <strong>0</strong>으로 두면 예측할 거리가 전혀 없는 시계열이 됩니다.
+        그때 모델의 AUC가 0.5 근처로 나오는지 확인해 보세요. 도구가 제대로 작동하는지 점검하는 좋은 방법입니다.
+        값을 키우면 "신호가 있으면 모델이 정말 찾아내는가"를 볼 수 있습니다.</div>
+    </div>
+
+    <!-- 파일 -->
+    <div id="srcFile" class="src-box hidden" style="margin-top:14px">
+      <div class="controls">
+        <div class="field"><label for="csvFile">CSV 파일</label><input type="file" id="csvFile" accept=".csv,.txt,.tsv"></div>
+      </div>
+      <div class="note">필요한 열: <code>Date</code>(또는 날짜), <code>Close</code>(또는 종가). 금리 열(<code>Rate</code>/<code>금리</code>/<code>DGS2</code>)이 있으면 금리 특징까지 씁니다.
+        야후 파이낸스·증권사에서 받은 CSV를 그대로 올려도 됩니다.</div>
+    </div>
+
+    <!-- 붙여넣기 -->
+    <div id="srcPaste" class="src-box hidden" style="margin-top:14px">
+      <textarea id="csvText" placeholder="Date,Close,Rate&#10;2015-01-02,2058.20,0.67&#10;2015-01-05,2020.58,0.63&#10;..."></textarea>
+      <div class="controls" style="margin-top:8px">
+        <button class="btn" id="loadPaste">붙여넣은 데이터로 시작</button>
+      </div>
+      <div class="note">Colab에서 <code>df.to_csv()</code>로 뽑은 내용을 그대로 붙여넣어도 됩니다.</div>
+    </div>
+
+    <!-- 인터넷 -->
+    <div id="srcNet" class="src-box hidden" style="margin-top:14px">
+      <div class="controls">
+        <div class="field"><label for="netProvider">제공처</label>
+          <select id="netProvider">
+            <option value="av">Alpha Vantage (무료 키, 가장 안정적)</option>
+            <option value="fred">FRED (무료 키)</option>
+            <option value="stooq">Stooq (키 없음, 차단될 수 있음)</option>
+          </select></div>
+        <div class="field" id="fSymbol"><label for="netSymbol">종목/시리즈</label><input type="text" id="netSymbol" value="SPY"></div>
+        <div class="field" id="fRate"><label for="netRate">금리</label><input type="text" id="netRate" value="2year"></div>
+        <div class="field" id="fKey"><label for="netKey">API 키</label><input type="password" id="netKey" placeholder="키를 붙여넣으세요"></div>
+        <button class="btn" id="loadNet">불러오기</button>
+      </div>
+      <div class="status" id="netStatus"></div>
+      <div class="note">키는 브라우저 안에서만 쓰이고 어디에도 저장·전송되지 않습니다(제공처 서버 제외).
+        Alpha Vantage 키는 <a href="https://www.alphavantage.co/support/#api-key" target="_blank" rel="noopener">여기</a>에서,
+        FRED 키는 <a href="https://fred.stlouisfed.org/docs/api/api_key.html" target="_blank" rel="noopener">여기</a>에서 무료로 받습니다.
+        브라우저 보안 정책(CORS) 때문에 막히면 CSV 방식을 쓰세요.</div>
+    </div>
+  </div>
+
+  <div id="dataResult" class="hidden">
+    <div class="grid c4 keep2" id="dataTiles"></div>
+    <div class="card">
+      <div class="chart-title" id="priceTitle">주가</div>
+      <div class="chart-note">아래로 마우스를 올리면 날짜별 값을 볼 수 있습니다.</div>
+      <canvas class="chart lg" id="chartPrice"></canvas>
+    </div>
+    <div class="card" id="rateCard">
+      <div class="chart-title" id="rateTitle">금리(%)</div>
+      <div class="chart-note">주가와 금리는 단위가 달라 한 그래프에 겹치지 않고 따로 그립니다.</div>
+      <canvas class="chart" id="chartRate"></canvas>
+    </div>
+    <div class="card">
+      <h3>모델에 넣는 값(특징) 미리보기</h3>
+      <p class="small">주가·금리를 그대로 쓰지 않고, 시기가 달라져도 성질이 변하지 않는 <strong>비율·변화량</strong>으로 바꿔 씁니다(정상성).</p>
+      <div class="tbl-wrap" id="featPreview"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ======================= 모델 비교 ======================= -->
+<section class="panel" id="panel-models">
+  <div class="card">
+    <h2>모델 비교 <span class="tiny">— Phase 1-a</span></h2>
+    <p class="card-sub">"N일 뒤에 오를까 내릴까"를 여러 모델로 맞혀 보고 성적을 나란히 비교합니다.</p>
+    <div class="controls">
+      <div class="field"><label for="mHorizon">예측 시계</label>
+        <select id="mHorizon"><option value="1">1일 뒤 (내일)</option><option value="5" selected>5일 뒤 (약 1주)</option><option value="20">20일 뒤 (약 1달)</option><option value="60">60일 뒤 (약 3달)</option></select></div>
+      <div class="field"><label for="mValidation">검증 방식</label>
+        <select id="mValidation"><option value="holdout" selected>시간순 분할 (앞 80% 학습)</option><option value="walk">워크포워드 (재학습 반복, 느림)</option></select></div>
+      <div class="field"><label for="mRatio">학습 비율 <span id="mRatioV" class="tiny">0.80</span></label>
+        <input type="range" id="mRatio" min="0.5" max="0.9" step="0.05" value="0.8"></div>
+      <div class="field"><label for="mThreshold">판정 문턱값 <span id="mThresholdV" class="tiny">0.50</span></label>
+        <input type="range" id="mThreshold" min="0.3" max="0.7" step="0.01" value="0.5"></div>
+    </div>
+    <div class="controls" style="margin-top:10px">
+      <label class="check"><input type="checkbox" id="mRate" checked> 금리 특징 사용 (가설 H2)</label>
+      <label class="check"><input type="checkbox" id="mExtra"> 확장 특징(변동성·장기모멘텀) 추가</label>
+      <label class="check"><input type="checkbox" id="mWeight" checked> 클래스 가중치 (다수결 흉내 방지)</label>
+    </div>
+    <div style="margin-top:12px">
+      <div class="tiny" style="margin-bottom:6px">비교할 모델</div>
+      <div class="chips" id="modelChips"></div>
+    </div>
+    <div class="controls" style="margin-top:14px">
+      <button class="btn" id="runModels">학습하고 비교하기</button>
+      <button class="btn ghost" id="runRateAB">금리 넣은 것과 뺀 것 비교 (H2)</button>
+    </div>
+    <div class="status" id="modelStatus"></div>
+    <div class="progress" id="modelProg"><div></div></div>
+  </div>
+
+  <div id="modelResult" class="hidden">
+    <div id="modelWarnings"></div>
+    <div class="card">
+      <h3>성적표</h3>
+      <p class="small">AUC를 먼저 보고, 상승예측비율과 <em>정확도−기준선</em>을 함께 확인하세요.</p>
+      <div class="tbl-wrap" id="modelTable"></div>
+    </div>
+    <div class="grid c2">
+      <div class="card">
+        <div class="chart-title">AUC — 오를 날과 내릴 날을 구별하는 힘</div>
+        <div class="chart-note">0.5는 실력 없음. 세로선이 그 기준입니다.</div>
+        <canvas class="chart" id="chartAuc"></canvas>
+      </div>
+      <div class="card">
+        <div class="chart-title">ROC 곡선</div>
+        <div class="chart-note">점선(대각선)에 붙을수록 판별력이 없다는 뜻입니다.</div>
+        <div id="rocLegend"></div>
+        <canvas class="chart" id="chartRoc"></canvas>
+      </div>
+    </div>
+    <div class="grid c2">
+      <div class="card">
+        <h3>혼동행렬</h3>
+        <div class="controls" style="margin-bottom:10px">
+          <div class="field"><label for="cmModel">모델 선택</label><select id="cmModel"></select></div>
+        </div>
+        <div class="cm" id="confMatrix"></div>
+      </div>
+      <div class="card">
+        <div class="chart-title">변수 중요도</div>
+        <div class="chart-note" id="impNote">모델이 어떤 값을 많이 참고했는지. 합이 1이 되도록 맞춘 상대값입니다.</div>
+        <canvas class="chart" id="chartImp"></canvas>
+      </div>
+    </div>
+    <div class="card" id="modelReading"></div>
+  </div>
+
+  <div id="abResult" class="hidden">
+    <div class="card">
+      <h3>금리 특징의 효과 (가설 H2)</h3>
+      <p class="small">같은 모델·같은 구간에서 금리 변수만 넣고 뺐을 때의 차이입니다. 차이가 거의 없다면 효율적 시장 가설과 어울리는 결과입니다.</p>
+      <div class="tbl-wrap" id="abTable"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ======================= 백테스트 ======================= -->
+<section class="panel" id="panel-backtest">
+  <div class="card">
+    <h2>백테스트 <span class="tiny">— Phase 1-b</span></h2>
+    <p class="card-sub">"그 예측대로 실제로 투자했다면?" 워크포워드로 계속 재학습하고, 거래비용까지 물립니다.</p>
+    <div class="controls">
+      <div class="field"><label for="bModel">모델</label><select id="bModel"></select></div>
+      <div class="field"><label for="bHorizon">예측 시계</label>
+        <select id="bHorizon"><option value="1" selected>1일 뒤 (내일)</option><option value="5">5일 뒤</option><option value="20">20일 뒤</option></select></div>
+      <div class="field"><label for="bStart">워크포워드 시작 <span id="bStartV" class="tiny">60%</span></label>
+        <input type="range" id="bStart" min="0.4" max="0.8" step="0.05" value="0.6"></div>
+      <div class="field"><label for="bStep">재학습 간격(거래일)</label>
+        <select id="bStep"><option value="25">25일 (촘촘·느림)</option><option value="50">50일</option><option value="100" selected>100일 (빠름)</option></select></div>
+      <div class="field"><label for="bCost">편도 거래비용(%) </label><input type="number" id="bCost" value="0.05" step="0.01" min="0"></div>
+      <div class="field"><label for="bSlip">슬리피지(%)</label><input type="number" id="bSlip" value="0.05" step="0.01" min="0"></div>
+      <div class="field"><label for="bThreshold">문턱값 <span id="bThresholdV" class="tiny">0.50</span></label>
+        <input type="range" id="bThreshold" min="0.3" max="0.7" step="0.01" value="0.5"></div>
+      <button class="btn" id="runBacktest">백테스트 실행</button>
+    </div>
+    <div class="status" id="btStatus"></div>
+    <div class="progress" id="btProg"><div></div></div>
+  </div>
+
+  <div id="btResult" class="hidden">
+    <div class="grid c4 keep2" id="btTiles"></div>
+    <div class="card">
+      <div class="chart-title">자산 곡선 (시작 = 1)</div>
+      <div class="chart-note">비용 전과 비용 후의 간격이 곧 수수료가 먹은 몫입니다.</div>
+      <div id="btLegend"></div>
+      <canvas class="chart lg" id="chartEquity"></canvas>
+    </div>
+    <div class="card">
+      <h3>성과 비교</h3>
+      <div class="tbl-wrap" id="btTable"></div>
+    </div>
+    <div class="card">
+      <div class="chart-title">거래비용을 올리면?</div>
+      <div class="chart-note">왕복 비용별 최종 누적수익. 회색 막대는 매수 후 보유에 진 경우입니다.</div>
+      <canvas class="chart" id="chartCost"></canvas>
+    </div>
+    <div class="card" id="btReading"></div>
+  </div>
+</section>
+
+<!-- ======================= 모의투자 ======================= -->
+<section class="panel" id="panel-sim">
+  <div class="card">
+    <h2>모의투자</h2>
+    <p class="card-sub">하루씩 넘기며 직접 사고팔아 보세요. 같은 조건의 AI 자동매매, 그리고 그냥 사서 들고 있기와 나란히 겨룹니다.</p>
+    <div class="controls">
+      <div class="field"><label for="sModel">AI 모델</label><select id="sModel"></select></div>
+      <div class="field"><label for="sCash">시작 자본</label>
+        <select id="sCash"><option value="1000000">100만원</option><option value="10000000" selected>1,000만원</option><option value="100000000">1억원</option></select></div>
+      <div class="field"><label for="sFee">거래비용(편도 %)</label><input type="number" id="sFee" value="0.1" step="0.01" min="0"></div>
+      <div class="field"><label for="sThreshold">AI 매수 문턱값 <span id="sThresholdV" class="tiny">0.50</span></label>
+        <input type="range" id="sThreshold" min="0.3" max="0.7" step="0.01" value="0.5"></div>
+      <button class="btn" id="startSim">모의투자 시작</button>
+    </div>
+    <div class="status" id="simStatus"></div>
+    <div class="progress" id="simProg"><div></div></div>
+    <div class="note">AI는 그날까지의 정보로 만든 예측만 보고 다음 날 포지션을 정합니다. 미래를 미리 알지 못합니다.
+      공매도·레버리지는 없고 현금과 주식 사이만 오갑니다.</div>
+  </div>
+
+  <div id="simBoard" class="hidden">
+    <div class="card">
+      <div class="grid c3">
+        <div>
+          <div class="tile" style="border:0;padding:0;background:transparent">
+            <div class="label">내 총자산</div>
+            <div class="hero-num" id="simEquity">—</div>
+            <div class="sub" id="simEquitySub">—</div>
+          </div>
+        </div>
+        <div>
+          <div class="label tiny">오늘 (<span id="simDate">—</span>)</div>
+          <div class="value" style="font-size:1.3rem;font-weight:650" id="simPrice">—</div>
+          <div class="sub tiny" id="simChange">—</div>
+          <div style="margin-top:10px">
+            <div class="label tiny">현금 / 주식 비중</div>
+            <div class="gauge"><div id="simWeightBar" style="background:var(--series-3)"></div></div>
+            <div class="tiny" id="simWeightText">—</div>
+          </div>
+        </div>
+        <div>
+          <div class="label tiny">AI가 본 내일 상승 확률</div>
+          <div class="value" style="font-size:1.3rem;font-weight:650" id="simProba">—</div>
+          <div class="gauge" style="margin-top:6px"><div id="simProbaBar"></div></div>
+          <div class="sub tiny" id="simSignal">—</div>
+        </div>
+      </div>
+
+      <div class="sim-actions" style="margin-top:16px">
+        <button class="btn" data-act="buy1">전액 매수</button>
+        <button class="btn ghost" data-act="buy05">절반 매수</button>
+        <button class="btn ghost" data-act="sell05">절반 매도</button>
+        <button class="btn ghost" data-act="sell1">전액 매도</button>
+      </div>
+      <div class="sim-actions">
+        <button class="btn ghost sm" data-step="1">하루 넘기기</button>
+        <button class="btn ghost sm" data-step="5">5일</button>
+        <button class="btn ghost sm" data-step="20">20일</button>
+        <button class="btn ghost sm" data-step="end">끝까지</button>
+        <label class="check" style="margin-left:6px"><input type="checkbox" id="simFollow"> AI가 시키는 대로 따라하기</label>
+      </div>
+      <div class="tiny" id="simProgressText">—</div>
+    </div>
+
+    <div class="card">
+      <div class="chart-title">자산 곡선 비교</div>
+      <div id="simLegend"></div>
+      <canvas class="chart lg" id="chartSim"></canvas>
+    </div>
+    <div class="card">
+      <div class="chart-title">가격 흐름 (지금까지 진행한 구간)</div>
+      <canvas class="chart" id="chartSimPrice"></canvas>
+    </div>
+    <div class="card">
+      <h3>성적</h3>
+      <div class="tbl-wrap" id="simTable"></div>
+    </div>
+    <div class="card">
+      <h3>내 거래 기록</h3>
+      <div class="tbl-wrap trade-log" id="simLog"><p class="small">아직 거래가 없습니다.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- ======================= 변동성 ======================= -->
+<section class="panel" id="panel-vol">
+  <div class="card">
+    <h2>변동성 분석 <span class="tiny">— Phase 1-c</span></h2>
+    <p class="card-sub">GARCH는 '오를까 내릴까'가 아니라 '얼마나 출렁일까'를 다룹니다. 그래서 정확도 표에 넣지 않고 따로 봅니다.</p>
+    <div class="controls">
+      <button class="btn" id="runVol">변동성 분석 실행</button>
+      <label class="check"><input type="checkbox" id="volNextDay" checked> 정책 발표 다음 날까지 이벤트로 포함</label>
+    </div>
+    <div class="status" id="volStatus"></div>
+  </div>
+  <div id="volResult" class="hidden">
+    <div class="grid c4 keep2" id="volTiles"></div>
+    <div class="card">
+      <div class="chart-title">GARCH(1,1) 조건부 변동성 (연율화 %)</div>
+      <div class="chart-note">변동성은 뭉쳐서 옵니다. 한 번 커지면 한동안 큰 상태가 유지됩니다.</div>
+      <div id="volLegend"></div>
+      <canvas class="chart lg" id="chartVol"></canvas>
+    </div>
+    <div class="card">
+      <div class="chart-title">정책 발표일 전후 vs 평소 — |일간 수익률| 분포</div>
+      <div class="chart-note">세로축은 각 집단 안에서의 비율입니다(표본 수가 달라도 비교할 수 있게).</div>
+      <div id="volHistLegend"></div>
+      <canvas class="chart" id="chartVolHist"></canvas>
+      <div id="volTest"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ======================= 용어 ======================= -->
+<section class="panel" id="panel-glossary">
+  <div class="card">
+    <h2>용어 정리</h2>
+    <p class="card-sub">모르는 말이 나오면 여기에서 찾아보세요.</p>
+    <div class="controls" style="margin-bottom:10px">
+      <div class="field" style="min-width:260px"><label for="glossSearch">검색</label>
+        <input type="text" id="glossSearch" placeholder="예: AUC, 샤프, 누수"></div>
+    </div>
+    <div class="tbl-wrap" id="glossTable"></div>
+  </div>
+  <div class="card">
+    <h2>이 사이트와 파이썬 코드의 관계</h2>
+    <div class="tbl-wrap" id="mapTable"></div>
+    <div class="note">브라우저에서는 scikit-learn·XGBoost·케라스를 쓸 수 없어 같은 알고리즘을 자바스크립트로 직접 구현했습니다.
+      구조와 규칙(시간순 분할, 클래스 가중치, 누수 방지)은 파이썬 코드와 같지만, 세부 구현과 하이퍼파라미터가 달라
+      숫자가 완전히 똑같지는 않습니다. 정식 결과는 파이썬 스크립트로 확인하세요.
+      LSTM 대신 신경망(MLP)을 쓰는 것도 같은 이유입니다.</div>
+  </div>
+</section>
+
+  <div class="foot">
+    교육·연구용 도구입니다. 실제 투자 판단에 사용하지 마십시오. 백테스트 결과는 미래 수익을 보장하지 않습니다.
+  </div>
+</div>
+
+<script src="js/util.js"></script>
+<script src="js/data.js"></script>
+<script src="js/ml.js"></script>
+<script src="js/metrics.js"></script>
+<script src="js/charts.js"></script>
+<script src="js/backtest.js"></script>
+<script src="js/sim.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
