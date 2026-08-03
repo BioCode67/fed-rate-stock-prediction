@@ -28,6 +28,7 @@
     <button data-tab="vol">5. 변동성</button>
     <button data-tab="event">6. 이벤트</button>
     <button data-tab="cross">7. 종목 순위</button>
+    <button data-tab="quant">8. 퀀트 AI</button>
     <button data-tab="glossary">용어</button>
   </nav>
 </header>
@@ -42,7 +43,9 @@
     <p>이 사이트는 <code>phase1a~phase3</code> 파이썬 연구 코드를 브라우저에서 그대로 돌려 볼 수 있게 옮긴 것입니다.
       설치할 것도, API 키도 없이 바로 시작할 수 있고, 원하면 실제 시장 데이터를 넣어 다시 확인할 수 있습니다.</p>
     <p class="small">아래 네 단계가 기본 흐름이고, 이어서 <strong>5. 변동성</strong>(GARCH), <strong>6. 이벤트</strong>(FOMC 전후 반응),
-      <strong>7. 종목 순위</strong>(여러 종목 중 오를 종목 고르기)까지 확인할 수 있습니다.</p>
+      <strong>7. 종목 순위</strong>(여러 종목 중 오를 종목 고르기)까지 확인할 수 있습니다.
+      한 걸음 더 나아간 <strong>8. 퀀트 AI</strong>는 파이썬 <code>quant/</code> 패키지에서 GPU로 학습한 결과를 불러와
+      실제 퀀트 방식(횡단면 순위 예측 + 롱숏 포트폴리오)으로 확인하고, 여러 종목 모의투자까지 해 보는 화면입니다.</p>
     <div class="sim-actions">
       <button class="btn big" id="quickRun">지금 바로 실행해 보기</button>
       <button class="btn ghost big" data-goto="data">데이터부터 고르기</button>
@@ -574,6 +577,117 @@
   </div>
 </section>
 
+<!-- ======================= 퀀트 AI ======================= -->
+<section class="panel" id="panel-quant">
+  <div class="card">
+    <h2>퀀트 AI <span class="tiny">— 파이썬(GPU)에서 학습한 결과 불러오기</span></h2>
+    <p class="card-sub">여기까지 오면 방식이 달라집니다. 지수 하나의 방향이 아니라
+      <strong>여러 종목 중에서 더 오를 종목을 골라내는</strong> 문제입니다. 실제 퀀트 운용이 하는 방식입니다.</p>
+    <div class="controls">
+      <button class="btn ghost" id="qtSample">내장 샘플 보기</button>
+      <div class="field"><label for="qtFile">학습 결과 파일 (web_export.json)</label>
+        <input type="file" id="qtFile" accept=".json"></div>
+    </div>
+    <div class="status" id="qtStatus"></div>
+    <div class="note">파이썬에서 <code>python -m quant.run --preset us --model gru --device cuda</code> 처럼 학습하면
+      <code>runs/&lt;이름&gt;/web_export.json</code> 이 만들어집니다. 그 파일을 여기에 올리면 결과를 보고
+      그 예측으로 모의투자까지 해 볼 수 있습니다.</div>
+  </div>
+
+  <div id="qtBoard" class="hidden">
+    <div id="qtMeta"></div>
+    <div class="grid c4 keep2" id="qtTiles"></div>
+
+    <div class="card">
+      <div class="chart-title">자산 곡선 (시작 = 1)</div>
+      <div class="chart-note">AI가 고른 상위 종목 포트폴리오 vs 전 종목 동일가중. 비용 전/후 간격이 수수료가 먹은 몫입니다.</div>
+      <div id="qtEquityLegend"></div>
+      <canvas class="chart lg" id="qtEquity"></canvas>
+    </div>
+
+    <div class="grid c2">
+      <div class="card">
+        <div class="chart-title">IC 흐름</div>
+        <div class="chart-note">날마다 '예측 순위'와 '실제 수익률'이 얼마나 맞았는지. 0이면 실력 없음.</div>
+        <canvas class="chart" id="qtIc"></canvas>
+      </div>
+      <div class="card">
+        <div class="chart-title">예측 분위별 실제 수익률</div>
+        <div class="chart-note">점수가 높은 분위일수록 실제 수익도 높아야 신호가 살아 있는 것입니다.</div>
+        <canvas class="chart" id="qtQuantiles"></canvas>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>성과 비교</h3>
+      <div class="tbl-wrap" id="qtPerfTable"></div>
+    </div>
+    <div class="card">
+      <h3>워크포워드 구간별</h3>
+      <p class="small">구간마다 다시 학습했습니다. 검증 IC와 시험 IC가 비슷해야 과적합이 아닙니다.</p>
+      <div class="tbl-wrap" id="qtFoldTable"></div>
+    </div>
+    <div class="card" id="qtReading"></div>
+
+    <div class="card">
+      <h2>여러 종목 모의투자</h2>
+      <p class="card-sub">갈아타는 날마다 종목을 직접 고르세요. 같은 기간을 AI와 동일가중 벤치마크도 함께 달립니다.</p>
+      <div class="controls">
+        <div class="field"><label for="qtCash">시작 자본</label>
+          <select id="qtCash"><option value="10000000" selected>1,000만원</option><option value="100000000">1억원</option></select></div>
+        <div class="field"><label for="qtFee">거래비용(편도 %)</label><input type="number" id="qtFee" value="0.1" step="0.01" min="0"></div>
+        <div class="field"><label for="qtTopK">AI가 담는 종목 수</label><input type="number" id="qtTopK" value="8" min="1" max="30" step="1"></div>
+        <button class="btn" id="qtStart">모의투자 시작</button>
+      </div>
+    </div>
+
+    <div id="qtSimBoard" class="hidden">
+      <div class="card">
+        <div class="grid c3">
+          <div>
+            <div class="label tiny">내 포트폴리오</div>
+            <div class="hero-num" id="qtEquityNow">—</div>
+            <div class="sub" id="qtEquitySub">—</div>
+          </div>
+          <div>
+            <div class="label tiny">AI 포트폴리오</div>
+            <div class="value" style="font-size:1.3rem;font-weight:650" id="qtAiVal">—</div>
+            <div class="label tiny" style="margin-top:8px">동일가중 벤치마크</div>
+            <div class="value" style="font-size:1.3rem;font-weight:650" id="qtBhVal">—</div>
+          </div>
+          <div>
+            <div class="label tiny">갈아타는 날</div>
+            <div class="value" style="font-size:1.3rem;font-weight:650" id="qtDate">—</div>
+            <div class="sub tiny" id="qtStepInfo">—</div>
+          </div>
+        </div>
+        <div class="sim-actions" style="margin-top:14px">
+          <button class="btn ghost sm" id="qtPickAll">AI가 고른 종목 그대로 담기</button>
+          <button class="btn sm" data-qstep="1">다음 리밸런싱</button>
+          <button class="btn ghost sm" data-qstep="10">10회</button>
+          <button class="btn ghost sm" data-qstep="end">끝까지</button>
+          <label class="check" style="margin-left:6px"><input type="checkbox" id="qtFollow"> 계속 AI를 따라가기</label>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="chart-title">자산 곡선 비교</div>
+        <div id="qtSimLegend"></div>
+        <canvas class="chart lg" id="qtSimChart"></canvas>
+      </div>
+      <div class="card">
+        <h3>이번 회차 종목 (AI 점수 순 상위 20)</h3>
+        <p class="small">체크한 종목을 동일가중으로 담습니다. 아무것도 고르지 않으면 현금으로 둡니다.</p>
+        <div class="tbl-wrap" id="qtPickTable"></div>
+      </div>
+      <div class="card">
+        <h3>성적</h3>
+        <div class="tbl-wrap" id="qtSimTable"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
 <!-- ======================= 용어 ======================= -->
 <section class="panel" id="panel-glossary">
   <div class="card">
@@ -609,6 +723,8 @@
 <script src="js/sim.js"></script>
 <script src="js/events.js"></script>
 <script src="js/cross.js"></script>
+<script src="js/sample_quant.js"></script>
+<script src="js/quant.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

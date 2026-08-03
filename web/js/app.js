@@ -1283,7 +1283,8 @@
     ['phase1c_garch_volatility.py', '5. 변동성', 'GARCH(1,1) 추정, 정책 발표일 전후 변동성 비교(H5)'],
     ['phase2_event_study.py', '6. 이벤트 (일부)', '발표일 전후 누적수익률과 집단 비교(H6). 성명서 원문 수집과 RoBERTa 톤 분석은 파이썬 전용 — 톤 점수는 붙여넣어 쓸 수 있음'],
     ['phase3_cross_section.py', '7. 종목 순위', '월별 순위 예측 포트폴리오와 벤치마크 비교(H7). 거래량 특징은 가격만 있을 때 제외됨'],
-    ['—', '4. 모의투자', '웹 전용. 워크포워드 예측을 그대로 써서 직접 매매해 보는 기능']
+    ['—', '4. 모의투자', '웹 전용. 워크포워드 예측을 그대로 써서 직접 매매해 보는 기능'],
+    ['quant/ (파이썬 패키지)', '8. 퀀트 AI', 'GPU로 학습한 횡단면 퀀트 모델(MLP/GRU/트랜스포머). 결과 JSON을 올려서 보고, 그 예측으로 여러 종목 모의투자']
   ];
 
   function renderStaticTables() {
@@ -1505,6 +1506,10 @@
     renderStaticTables();
     // 처음 열면 바로 볼 수 있도록 데모 데이터를 미리 넣어 둡니다.
     setData(D.makeDemo({ n: 3800, signal: 0.06, seed: 42 }));
+    // 퀀트 AI 탭 (파이썬에서 학습한 결과를 보여 주는 화면)
+    if (root.quant && root.quant.init) {
+      try { root.quant.init(); } catch (e) { console.warn('퀀트 탭 초기화 실패:', e); }
+    }
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);

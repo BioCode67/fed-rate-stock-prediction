@@ -15,3 +15,7 @@ secrets.py
 .DS_Store
 Thumbs.db
 fomc_cache/
+runs/
+data_cache/
+__pycache__/
+*.pyc

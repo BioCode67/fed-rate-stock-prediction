@@ -1,0 +1,23 @@
+# 퀀트 파이프라인(quant/) 실행에 필요한 것들
+#
+#   pip install -r requirements.txt
+#
+# GPU를 쓰려면 torch를 CUDA 빌드로 따로 설치하세요(드라이버에 맞는 버전 선택):
+#   pip install torch --index-url https://download.pytorch.org/whl/cu124
+#
+# phase1a~phase3 스크립트는 Colab에서 각 파일 맨 위의 설치 줄을 쓰면 됩니다.
+
+numpy>=1.24
+pandas>=2.0
+scipy>=1.10
+matplotlib>=3.7
+
+# 신경망 모델(mlp/gru/transformer)에 필요. ridge만 쓸 거면 없어도 됩니다.
+torch>=2.0
+
+# 실제 주가 내려받기 (매크로 지표는 FRED 공개 CSV라 키가 필요 없습니다)
+yfinance>=0.2.40
+
+# 선택: 비교군 모델
+# lightgbm>=4.0
+# scikit-learn>=1.3

@@ -32,6 +32,7 @@
 | 2 | `phase2_event_study.py` | 연준 성명서의 논조(매파/비둘기)와 주가 반응 분석 | 완료 |
 | 3 | `phase3_cross_section.py` | 여러 종목 중 다음 달 오를 종목의 순위 예측 | 완료 |
 | 웹 | `web/` | 위 내용을 브라우저에서 클릭만으로 확인하는 웹사이트 + 모의투자 | 완료 |
+| 퀀트 | `quant/` | 여러 종목 중 오를 종목을 골라내는 GPU 학습 파이프라인 ([QUANT.md](QUANT.md)) | 완료 |
 
 1단계(1-a, 1-b)만 제대로 끝내도 하나의 완결된 발표가 됩니다. 2·3단계는 여유가 있을 때
 붙이는 확장입니다. 한 번에 다 하려 하기보다 하나씩 검증하며 진행하는 것을 권합니다.
@@ -59,6 +60,7 @@
 | 5. 변동성 | GARCH(1,1)를 추정하고 정책 발표일 전후 변동성을 비교합니다(H5) | `phase1c_garch_volatility.py` |
 | 6. 이벤트 | 발표일 전후 누적수익률(CAR)을 그리고 두 집단의 반응을 t검정합니다(H6) | `phase2_event_study.py` (일부) |
 | 7. 종목 순위 | 매달 상위 N종목을 골라 담는 전략을 동일가중·지수와 비교합니다(H7) | `phase3_cross_section.py` |
+| 8. 퀀트 AI | 파이썬 `quant/`에서 GPU로 학습한 결과를 올려 IC·분위수익·포트폴리오 성과를 보고, 여러 종목 모의투자를 합니다 | `quant/` ([QUANT.md](QUANT.md)) |
 | 용어 | README의 용어 정리를 검색할 수 있게 옮겨 두었습니다 | — |
 
 몇 가지 알아 둘 점이 있습니다.
@@ -82,6 +84,36 @@
   **보고서에 싣는 정식 결과는 파이썬 스크립트로 확인하세요.**
 - `web/standalone.html`은 `python3 web/build_single.py`로 다시 만들 수 있습니다(CSS·JS를 HTML 하나로 합침).
   `web/` 안의 파일을 고쳤다면 이 명령을 한 번 실행해 두 버전을 맞춰 주세요.
+
+
+## 한 걸음 더: 퀀트 AI (`quant/`)
+
+여기까지는 "지수가 오를까 내릴까"를 맞히는 문제였습니다. 실제 퀀트 운용은 조금 다른 질문을 던집니다.
+
+> 시장이 오를지는 몰라도, **이 종목들 중 어느 쪽이 더 오를지**는 맞힐 수 있을까?
+
+`quant/` 패키지가 그 방식입니다. 종목 수십 개의 팩터를 날짜마다 서로 비교해 순위를 매기고
+(횡단면 정규화), 정확도 대신 **IC**(예측 순위와 실제 수익률의 상관)를 직접 최대화하도록
+PyTorch로 학습합니다. GPU가 있으면 훨씬 빠릅니다.
+
+```bash
+pip install -r requirements.txt
+
+python -m quant.run --preset demo                          # 가상 데이터로 점검 (1~2분)
+python -m quant.run --preset us --model gru --device cuda  # 미국 대형주 + 매크로, GPU 학습
+```
+
+학습이 끝나면 `runs/<이름>/web_export.json`이 만들어지고, 웹의 **8. 퀀트 AI** 탭에 그 파일을
+올리면 결과를 보고 여러 종목 모의투자까지 할 수 있습니다.
+
+누수 점검 두 가지를 꼭 함께 돌려 보세요. 좋은 결과가 나왔을 때 그것이 진짜인지 확인하는 방법입니다.
+
+```bash
+python -m quant.run --preset demo --syn-signal 0      # 예측할 거리가 없는 시장 → IC 0 근처여야 정상
+python -m quant.run --preset demo --permute-labels    # 정답을 뒤섞기 → IC 0 근처여야 정상
+```
+
+자세한 설명, GPU(A6000) 설정, 결과 읽는 법은 → [QUANT.md](QUANT.md)
 
 
 ## 실행 방법 (Google Colab)
