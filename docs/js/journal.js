@@ -141,13 +141,21 @@
     if (alps.length) {
       out.push('## 알파 평가 기록');
       out.push('');
-      out.push('| # | 시각 | 알파 | 식 | IC | t값 | 기존 팩터 최대상관 |');
-      out.push('|---|---|---|---|---|---|---|');
+      out.push('| # | 시각 | 알파 | 식 | Sharpe | Fitness | 회전율 | 자기상관 | 판정 |');
+      out.push('|---|---|---|---|---|---|---|---|---|');
       alps.slice().reverse().forEach(function (e, i) {
+        // IQC 채점표가 생기기 전 기록은 IC/t만 있습니다.
+        const legacy = !isFinite(e.sharpe);
         out.push('| ' + (i + 1) + ' | ' + new Date(e.ts).toLocaleDateString('ko-KR') +
-          ' | ' + (e.name || '—') + ' | `' + (e.formula || '') + '` | ' + num(e.ic, 4) +
-          ' | ' + num(e.t) + ' | ' + num(e.maxCorr) + ' |');
+          ' | ' + (e.name || '—') + ' | `' + (e.formula || '').replace(/\|/g, '/') + '` | ' +
+          (legacy ? 'IC ' + num(e.ic, 4) : num(e.sharpe)) + ' | ' +
+          (legacy ? 't ' + num(e.t) : num(e.fitness)) + ' | ' +
+          (legacy ? '—' : (isFinite(e.turnover) ? (e.turnover * 100).toFixed(1) + '%' : '—')) + ' | ' +
+          num(e.maxCorr) + ' | ' +
+          (legacy ? '(옛 기준)' : (e.passed ? '제출 가능' : '기준 미달')) + ' |');
       });
+      out.push('');
+      out.push('기준: Sharpe ≥ 1.25 · Fitness ≥ 1.0 · 회전율 1~70% · 자기상관 < 0.7 (WorldQuant BRAIN 제출 기준)');
       out.push('');
     }
 

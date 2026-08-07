@@ -127,16 +127,42 @@
       box.appendChild(U.el('div', 'mono small', e.formula || ''));
       const g = U.el('div', 'grid g4');
       g.style.marginTop = '8px';
-      g.appendChild(App.stat('IC', isFinite(e.ic) ? e.ic.toFixed(4) : '—',
-        '시계 ' + e.horizon + '일', e.ic > 0.02 ? 'up' : (e.ic < -0.02 ? 'down' : '')));
-      g.appendChild(App.stat('t값', isFinite(e.t) ? e.t.toFixed(2) : '—',
-        Math.abs(e.t) > 2 ? '우연으로 보기 어려움' : '우연일 수 있음'));
-      g.appendChild(App.stat('상·하위 격차',
-        isFinite(e.spread) ? ((e.spread >= 0 ? '+' : '') + (e.spread * 100).toFixed(2) + '%') : '—', ''));
-      g.appendChild(App.stat('기존 팩터 최대상관',
-        isFinite(e.maxCorr) ? e.maxCorr.toFixed(2) : '—',
-        e.maxCorr >= 0.9 ? '사실상 같은 팩터' : '독립적', e.maxCorr >= 0.9 ? 'down' : 'up'));
-      box.appendChild(g);
+      const GATE = root.SIM ? root.SIM.GATE : { sharpe: 1.25, fitness: 1, turnoverMax: 0.7, selfCorr: 0.7 };
+      if (isFinite(e.sharpe)) {
+        // IQC 시뮬레이터 기록
+        g.appendChild(App.stat('Sharpe', e.sharpe.toFixed(2),
+          '기준 ≥ ' + GATE.sharpe, e.sharpe >= GATE.sharpe ? 'up' : 'down'));
+        g.appendChild(App.stat('Fitness', isFinite(e.fitness) ? e.fitness.toFixed(2) : '—',
+          '기준 ≥ ' + GATE.fitness, e.fitness >= GATE.fitness ? 'up' : 'down'));
+        g.appendChild(App.stat('회전율', isFinite(e.turnover) ? (e.turnover * 100).toFixed(1) + '%' : '—',
+          '기준 1~70%',
+          (e.turnover >= 0.01 && e.turnover <= GATE.turnoverMax) ? 'up' : 'down'));
+        g.appendChild(App.stat('자기상관', isFinite(e.maxCorr) ? e.maxCorr.toFixed(2) : '—',
+          isFinite(e.maxCorr) ? '기준 < ' + GATE.selfCorr : '비교할 알파 없음',
+          isFinite(e.maxCorr) ? (e.maxCorr < GATE.selfCorr ? 'up' : 'down') : ''));
+        box.appendChild(g);
+        const cfg = e.config || {};
+        box.appendChild(U.el('div', 'tiny',
+          '설정 · ' + (cfg.neutralize === 'sector' ? '섹터 중립' :
+                      (cfg.neutralize === 'none' ? '중립화 없음' : '시장 중립')) +
+          ' / 감쇠 ' + (cfg.decay > 1 ? cfg.decay + '일' : '없음') +
+          ' / 종목 상한 ' + (cfg.maxWeight >= 1 ? '없음' : Math.round((cfg.maxWeight || 0) * 100) + '%') +
+          ' / 평가 ' + (cfg.years || '?') + '년' +
+          (e.passed ? ' · 제출 가능' : ' · 기준 미달')));
+      } else {
+        // 옛 기록(IC 방식으로 재던 시절)
+        g.appendChild(App.stat('IC', isFinite(e.ic) ? e.ic.toFixed(4) : '—',
+          '시계 ' + (e.horizon || '?') + '일', e.ic > 0.02 ? 'up' : (e.ic < -0.02 ? 'down' : '')));
+        g.appendChild(App.stat('t값', isFinite(e.t) ? e.t.toFixed(2) : '—',
+          Math.abs(e.t) > 2 ? '우연으로 보기 어려움' : '우연일 수 있음'));
+        g.appendChild(App.stat('상·하위 격차',
+          isFinite(e.spread) ? ((e.spread >= 0 ? '+' : '') + (e.spread * 100).toFixed(2) + '%') : '—', ''));
+        g.appendChild(App.stat('기존 팩터 최대상관',
+          isFinite(e.maxCorr) ? e.maxCorr.toFixed(2) : '—',
+          e.maxCorr >= 0.9 ? '사실상 같은 팩터' : '독립적', e.maxCorr >= 0.9 ? 'down' : 'up'));
+        box.appendChild(g);
+        box.appendChild(U.el('div', 'tiny', 'IQC 채점표가 생기기 전에 남긴 기록입니다.'));
+      }
     } else if (e.kind === 'factor' && e.top) {
       const rows = e.top.map(function (t) {
         return { cells: [t.name, t.ic.toFixed(4), isFinite(t.t) ? t.t.toFixed(2) : '—',
@@ -219,9 +245,14 @@
         (e.excess >= 0 ? '+' : '') + (e.excess * 100).toFixed(1) + '%p)';
     }
     if (e.kind === 'alpha') {
+      if (isFinite(e.sharpe)) {
+        return (e.name || '알파') + ' · Sharpe ' + e.sharpe.toFixed(2) +
+          ' · Fitness ' + (isFinite(e.fitness) ? e.fitness.toFixed(2) : '—') +
+          ' · 회전율 ' + (isFinite(e.turnover) ? (e.turnover * 100).toFixed(1) + '%' : '—') +
+          (e.passed ? ' · 제출 가능' : '');
+      }
       return (e.name || '알파') + ' · IC ' + (isFinite(e.ic) ? e.ic.toFixed(4) : '—') +
-        ' t ' + (isFinite(e.t) ? e.t.toFixed(2) : '—') +
-        ' · 최대상관 ' + (isFinite(e.maxCorr) ? e.maxCorr.toFixed(2) : '—');
+        ' t ' + (isFinite(e.t) ? e.t.toFixed(2) : '—');
     }
     if (e.kind === 'factor') {
       const t = (e.top && e.top[0]) || {};

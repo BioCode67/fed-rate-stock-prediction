@@ -471,6 +471,7 @@
         pnl: m.pnl.slice(-250).map(function (x) { return +x.toFixed(8); }),
         metrics: { sharpe: m.sharpe, fitness: m.fitness, turnover: m.turnover, returns: m.returns },
         config: R.config,
+        range: R.range,
         created: new Date().toISOString()
       });
       S.name = nm;
@@ -479,9 +480,192 @@
     });
     row.appendChild(sv);
     p.body.appendChild(row);
-    p.body.appendChild(U.el('div', 'tiny',
-      '저장하면 전략 실험실과 모의투자 목록에 "내 알파"로 나타납니다. ' +
-      '거기서 거래비용을 물리고 채점 구간에 제출할 수 있습니다.'));
+    const bridge = U.el('div', 'note');
+    bridge.innerHTML =
+      '저장하면 전략 실험실과 모의투자 목록에 <b>내 알파</b>로 나타납니다. ' +
+      '거기서 거래비용을 물리고 채점 구간에 제출할 수 있습니다.<br><br>' +
+      '<b>두 화면의 숫자가 다른 이유.</b> 여기는 IQC 방식이라 <b>롱숏</b>입니다 — ' +
+      '점수가 높은 종목을 사고 낮은 종목을 공매도해 시장 방향을 지웁니다. ' +
+      '전략 실험실은 <b>롱온리</b>라 상위 N종목만 삽니다. 같은 알파라도 ' +
+      '롱온리는 시장이 오르면 같이 오르고, 롱숏은 그 부분이 빠집니다. ' +
+      '그래서 샤프도 회전율도 다르게 나옵니다. 어느 쪽이 맞는 게 아니라 <b>보는 렌즈가 다릅니다</b> — ' +
+      'IQC·헤지펀드는 롱숏으로, 개인 투자자와 대부분의 펀드는 롱온리로 봅니다.';
+    p.body.appendChild(bridge);
+    return p;
+  }
+
+  /* ------------------------------------------------------------------------
+   *  알파 묶음 — IQC가 알파를 여러 개 요구하는 이유
+   *
+   *  하나로는 기준을 못 넘겨도, 서로 닮지 않은 것을 섞으면 넘길 수 있습니다.
+   *  손실이 겹치지 않으면 변동성이 줄어들기 때문입니다. 이걸 말로 하면
+   *  안 와닿는데, 자기가 만든 알파로 보면 바로 압니다.
+   * ----------------------------------------------------------------------*/
+  function portfolioPanel() {
+    const list = ALPHA.load().filter(function (a) { return a.pnl && a.pnl.length >= 60; });
+    if (list.length < 2) return null;
+
+    const p = App.panel('알파 묶음 <span class="accent">PORTFOLIO</span>',
+      { sub: list.length + '개를 같은 비중으로 합치면 어떻게 되는가' });
+
+    // 길이가 다르면 겹치는 뒷부분만 씁니다
+    const n = Math.min.apply(null, list.map(function (a) { return a.pnl.length; }));
+    const series = list.map(function (a) { return a.pnl.slice(a.pnl.length - n); });
+
+    const sharpeOf = function (arr) {
+      const m = arr.reduce(function (a, b) { return a + b; }, 0) / arr.length;
+      let v = 0;
+      arr.forEach(function (x) { v += (x - m) * (x - m); });
+      const sd = arr.length > 1 ? Math.sqrt(v / (arr.length - 1)) : 0;
+      return sd > 0 ? (m / sd) * Math.sqrt(252) : NaN;
+    };
+    const sdOf = function (arr) {
+      const m = arr.reduce(function (a, b) { return a + b; }, 0) / arr.length;
+      let v = 0;
+      arr.forEach(function (x) { v += (x - m) * (x - m); });
+      return arr.length > 1 ? Math.sqrt(v / (arr.length - 1)) : 0;
+    };
+
+    // 같은 '금액'이 아니라 같은 '위험'으로 섞습니다.
+    // 알파마다 변동성이 다른데 금액만 맞춰 섞으면 시끄러운 쪽이 묶음을 지배합니다.
+    // 실무에서 알파를 합칠 때도 위험을 맞춰 섞습니다.
+    const sds = series.map(sdOf);
+    const scaled = series.map(function (x, k) {
+      const f = sds[k] > 0 ? 1 / sds[k] : 0;
+      return x.map(function (v) { return v * f; });
+    });
+    const combinedScaled = [];
+    for (let i = 0; i < n; i++) {
+      let s2 = 0;
+      scaled.forEach(function (x) { s2 += x[i]; });
+      combinedScaled.push(s2 / scaled.length);
+    }
+    // 그림으로 비교할 때는 원래 크기 감각으로 되돌립니다
+    const avgSd = sds.reduce(function (a, b) { return a + b; }, 0) / sds.length;
+    const combined = combinedScaled.map(function (v) { return v * avgSd; });
+
+    const each = series.map(sharpeOf);
+    const finite = each.filter(isFinite);
+    const best = finite.length ? Math.max.apply(null, finite) : NaN;
+    const avgSharpe = finite.length ? finite.reduce(function (a, b) { return a + b; }, 0) / finite.length : NaN;
+    const combo = sharpeOf(combinedScaled);
+
+    // 상관을 미리 재 둡니다(판정에 씁니다)
+    let maxAbsCorr = 0, maxPair = null;
+    for (let i2 = 0; i2 < list.length; i2++) {
+      for (let j = i2 + 1; j < list.length; j++) {
+        const c = SIM.pnlCorr(series[i2], series[j]);
+        if (isFinite(c) && Math.abs(c) > maxAbsCorr) {
+          maxAbsCorr = Math.abs(c);
+          maxPair = list[i2].name + ' · ' + list[j].name;
+        }
+      }
+    }
+
+    const g = U.el('div', 'grid g3');
+    g.appendChild(App.stat('가장 좋은 알파 하나', isFinite(best) ? best.toFixed(2) : '—', 'Sharpe'));
+    g.appendChild(App.stat('개별 평균', isFinite(avgSharpe) ? avgSharpe.toFixed(2) : '—', 'Sharpe'));
+    g.appendChild(App.stat(list.length + '개를 합치면', isFinite(combo) ? combo.toFixed(2) : '—',
+      isFinite(combo) && isFinite(avgSharpe)
+        ? '평균 대비 ' + (combo - avgSharpe >= 0 ? '+' : '') + (combo - avgSharpe).toFixed(2) : '',
+      isFinite(combo) && isFinite(avgSharpe) && combo > avgSharpe ? 'up' : 'down'));
+    p.body.appendChild(g);
+    const how = U.el('div', 'tiny');
+    how.innerHTML = '같은 금액이 아니라 <b>같은 위험</b>으로 섞었습니다(변동성이 큰 알파의 비중을 줄임). ' +
+      '금액만 맞춰 섞으면 시끄러운 알파가 묶음을 지배해 버립니다. 실무도 이렇게 합니다.';
+    p.body.appendChild(how);
+
+    // 누적 손익 — 개별과 묶음을 같이
+    const cumOf = function (arr) {
+      let acc = 0;
+      return arr.map(function (x) { acc += x / 0.5; return acc; });
+    };
+    const chartSeries = list.map(function (a, k) {
+      return { name: a.name, values: cumOf(series[k]), color: C.mutedColor(), dash: [3, 3] };
+    });
+    chartSeries.push({ name: '묶음 (같은 위험)', values: cumOf(combined), color: C.seriesColor(1) });
+    p.body.appendChild(C.legend(chartSeries.map(function (x) {
+      return { name: x.name, color: x.color, dash: x.dash };
+    })));
+    const cv = U.el('canvas', 'chart');
+    p.body.appendChild(cv);
+    C.line(cv, {
+      labels: new Array(n).fill(''),
+      series: chartSeries, zeroLine: 0,
+      yFmt: function (x) { return (x * 100).toFixed(0) + '%'; }
+    });
+
+    // 상관 행렬
+    p.body.appendChild(U.el('div', 'tiny mt',
+      '알파끼리 손익 상관 — 낮을수록 섞는 보람이 있습니다. 맨 왼쪽 Sharpe도 함께 보세요'));
+    const rows = list.map(function (a, i2) {
+      const sh = U.el('span', 'mono ' + (each[i2] > 0 ? 'up' : 'down'));
+      sh.textContent = isFinite(each[i2]) ? each[i2].toFixed(2) : '—';
+      const cells = [U.el('span', 'small', a.name), sh];
+      list.forEach(function (b2, j) {
+        if (i2 === j) { cells.push(U.el('span', 'tiny', '—')); return; }
+        const c = SIM.pnlCorr(series[i2], series[j]);
+        const el = U.el('span', !isFinite(c) ? '' : (Math.abs(c) >= SIM.GATE.selfCorr ? 'down' : (Math.abs(c) < 0.3 ? 'up' : '')));
+        el.textContent = isFinite(c) ? c.toFixed(2) : '—';
+        cells.push(el);
+      });
+      return { cells: cells };
+    });
+    p.body.appendChild(App.table(
+      ['', { label: 'Sharpe', num: true }].concat(list.map(function (a) { return { label: a.name, num: true }; })),
+      rows, { scroll: true }));
+
+    // 왜 좋아졌는지/안 좋아졌는지를 실제 원인으로 구분해서 말합니다.
+    // "상관이 높아서"라고 뭉뚱그리면 틀릴 때가 많습니다 — 약한 알파를 섞어
+    // 희석된 경우와 닮아서 분산이 안 된 경우는 처방이 다릅니다.
+    const weak = each.filter(function (x) { return isFinite(x) && x <= 0; }).length;
+    const beatsAvg = isFinite(combo) && isFinite(avgSharpe) && combo > avgSharpe + 0.01;
+    const beatsBest = isFinite(combo) && isFinite(best) && combo > best;
+
+    let msg, cls;
+    if (beatsBest) {
+      cls = 'ok';
+      msg = '<b>합친 쪽이 가장 좋은 알파 하나보다 낫습니다</b>(' + best.toFixed(2) + ' → ' + combo.toFixed(2) + '). ' +
+        '수익이 커져서가 아니라 <b>변동성이 줄어서</b>입니다. 알파들의 손실이 서로 다른 날 나면 ' +
+        '합쳤을 때 상쇄됩니다. 이것이 IQC가 알파를 여러 개, 그것도 <b>서로 닮지 않게</b> 내라고 하는 이유입니다.';
+    } else if (beatsAvg) {
+      cls = 'ok';
+      msg = '<b>분산 효과는 확인됩니다.</b> 개별 평균 ' + avgSharpe.toFixed(2) + ' → 묶음 ' + combo.toFixed(2) +
+        '. 다만 가장 좋은 알파 하나(' + best.toFixed(2) + ')는 아직 못 넘었습니다.<br><br>' +
+        '평균보다 높다는 것이 <b>서로 손실을 상쇄했다는 증거</b>입니다. ' +
+        '가장 좋은 하나까지 넘으려면, 그 알파에 견줄 만한 것을 하나 더 만들어야 합니다. ' +
+        '약한 알파를 많이 넣는다고 되지 않습니다.';
+    } else if (maxAbsCorr >= SIM.GATE.selfCorr) {
+      cls = 'warn';
+      msg = '<b>닮은 알파가 섞여 있습니다.</b> 「' + U.escape(maxPair || '') + '」의 상관이 ' +
+        maxAbsCorr.toFixed(2) + '입니다(기준 ' + SIM.GATE.selfCorr + '). ' +
+        '사실상 같은 알파라 섞어도 분산이 되지 않습니다. ' +
+        '서로 다른 데이터(가격 / 거래량 / 섹터)와 서로 다른 시계(5일 / 20일 / 1년)를 쓰는 알파를 만들어 보세요.';
+    } else if (weak) {
+      cls = 'warn';
+      msg = '<b>상관은 낮은데도(최대 ' + maxAbsCorr.toFixed(2) + ') 나아지지 않았습니다.</b> ' +
+        '원인은 상관이 아니라 <b>알파의 질</b>입니다. Sharpe가 0 이하인 알파가 ' + weak + '개 있습니다.<br><br>' +
+        '분산은 <b>각자 돈을 버는 알파들</b>을 섞을 때만 이득입니다. ' +
+        '지지 않는 것과 이기는 것은 다릅니다. 손해 보는 알파를 아무리 다양하게 섞어도 손해입니다. ' +
+        '위 표에서 Sharpe가 음수인 것을 지우고 다시 보세요.';
+    } else {
+      cls = 'warn';
+      msg = '<b>합쳐도 평균보다 나아지지 않았습니다.</b> 상관도 낮고(최대 ' + maxAbsCorr.toFixed(2) + ') ' +
+        '개별 알파도 음수는 없는데 이렇다면, 표본이 짧아(' + n + '일) 추정이 흔들리는 것일 수 있습니다. ' +
+        '평가 기간을 늘려 다시 시뮬레이션한 뒤 저장해 보세요.';
+    }
+    const note = U.el('div', 'note ' + cls);
+    note.innerHTML = msg;
+    p.body.appendChild(note);
+
+    // 구간이 다른 알파를 섞으면 비교가 성립하지 않습니다
+    const ranges = {};
+    list.forEach(function (a) { if (a.range) ranges[a.range.start + '~' + a.range.end] = 1; });
+    if (Object.keys(ranges).length > 1) {
+      p.body.appendChild(U.el('div', 'note warn',
+        '평가 구간이 서로 다른 알파가 섞여 있습니다. 겹치는 뒷부분 ' + n + '일만 써서 계산했지만, ' +
+        '날짜가 정확히 맞는다는 보장은 없습니다. 정확히 비교하려면 같은 설정으로 다시 시뮬레이션해 저장하세요.'));
+    }
     return p;
   }
 
@@ -664,6 +848,8 @@
     }
     const sp = savedPanel(host);
     if (sp) host.appendChild(sp);
+    const pp = portfolioPanel();
+    if (pp) host.appendChild(pp);
     if (!S.result) host.appendChild(introPanel());
   }
 
