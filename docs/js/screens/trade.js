@@ -127,20 +127,44 @@
     const usable = chosen.filter(function (t) { return isFinite(px[t]) && px[t] > 0; });
     if (!usable.length) return;
 
-    // 목표에 없는 종목은 전부 팔고
+    // 1) 목표에 없는 종목을 전부 팝니다.
     Object.keys(acc.positions).forEach(function (t) {
       if (usable.indexOf(t) < 0) sell(t, acc.positions[t].qty);
     });
-    // 목표 비중에 맞춰 조정
+
+    // 2) 목표 금액을 정합니다.
+    //    ★ 수수료를 목표에 반영해야 합니다. per = 자산/종목수 로 그냥 두면
+    //      매수마다 per*(1+fee) 가 나가서 마지막 종목에서 현금이 모자라 조용히 실패합니다.
     const value = equity();
-    const per = value / usable.length;
-    usable.forEach(function (t) {
+    const per = (value / usable.length) / (1 + acc.fee);
+
+    // 3) 파는 것을 먼저, 사는 것을 나중에 합니다(현금을 확보한 뒤 사야 하므로).
+    const orders = usable.map(function (t) {
       const cur = (acc.positions[t] ? acc.positions[t].qty : 0) * px[t];
-      const diff = per - cur;
-      const qty = Math.floor(Math.abs(diff) / (px[t] * (1 + acc.fee)));
-      if (qty <= 0) return;
-      if (diff > 0) buy(t, qty); else sell(t, qty);
+      return { t: t, diff: per - cur };
     });
+    orders.filter(function (o) { return o.diff < 0; }).forEach(function (o) {
+      const qty = Math.floor(-o.diff / px[o.t]);
+      if (qty > 0) sell(o.t, qty);
+    });
+    orders.filter(function (o) { return o.diff > 0; }).forEach(function (o) {
+      const unit = px[o.t] * (1 + acc.fee);
+      // 매도에도 수수료가 붙으므로 확보된 현금이 계산보다 조금 적습니다.
+      // 가용 현금 한도를 함께 걸어 두면 마지막 종목이 통째로 빠지는 일이 없습니다.
+      const qty = Math.min(Math.floor(o.diff / unit), Math.floor(acc.cash / unit));
+      if (qty > 0) buy(o.t, qty);
+    });
+
+    // 정수 주식만 살 수 있어 남는 현금을, 살 수 있는 종목에 한 주씩 더 넣어 줄입니다.
+    for (let pass = 0; pass < 3; pass++) {
+      let bought = false;
+      for (let k = 0; k < usable.length; k++) {
+        const t = usable[k];
+        const unit = px[t] * (1 + acc.fee);
+        if (acc.cash >= unit) { buy(t, 1); bought = true; }
+      }
+      if (!bought) break;
+    }
     acc.lastReb = acc.t;
   }
 
