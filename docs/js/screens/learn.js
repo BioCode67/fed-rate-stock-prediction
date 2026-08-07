@@ -676,5 +676,12 @@
     else host.appendChild(glossPanel(host));
   }
 
-  App.register('learn', { render: draw });
+  App.register('learn', {
+    render: draw,
+    // 다른 화면에서 특정 탭을 바로 열고 싶을 때: App.screens.learn.open('ideas')
+    open: function (tab) {
+      if (tab) S.tab = tab;
+      App.go('learn');
+    }
+  });
 })(window.QL = window.QL || {});

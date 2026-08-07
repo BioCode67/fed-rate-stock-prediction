@@ -732,6 +732,171 @@
   }
 
   /* ------------------------------------------------------------------------
+   *  다음 수 — 채점표를 판정이 아니라 코치로
+   *
+   *  "기준 미달"만 보고 끝나면 학생은 거기서 멈춥니다. 무엇이 병목인지,
+   *  그래서 식을 어떻게 고치면 되는지를 <b>실제 식으로</b> 만들어 줍니다.
+   *
+   *  다만 여기에는 함정이 있습니다. 제안을 기계적으로 눌러 대면 그게 바로
+   *  다중검정입니다. 그래서 제안은 최대 3개까지만 내고, 누를 때마다
+   *  시도로 기록된다는 것을 눈에 보이게 적어 둡니다.
+   * ----------------------------------------------------------------------*/
+  function suggestions(R) {
+    const m = R.m, src = (R.src || '').trim(), out = [];
+    const has = function (fn) { return src.indexOf(fn + '(') >= 0; };
+    const failed = {};
+    R.grade.checks.forEach(function (c) { if (!c.pass) failed[c.key] = c; });
+
+    // 1) 부호가 반대 — 가장 먼저 확인해야 합니다
+    if (m.sharpe <= -0.3 && src) {
+      out.push({
+        title: '부호를 뒤집어 보세요',
+        body: 'Sharpe가 <b>' + m.sharpe.toFixed(2) + '</b>입니다. 크게 음수라는 것은 신호가 없다는 뜻이 아니라 ' +
+          '<b>방향이 반대</b>라는 뜻일 수 있습니다. 그대로 뒤집으면 부호가 바뀝니다.',
+        warn: '다만 뒤집기 전에 <b>왜 반대인지 말로 설명할 수 있어야</b> 합니다. ' +
+          '설명 없이 뒤집는 것은 데이터에 맞추는 것이지 가설이 아닙니다.',
+        code: '-(' + src + ')'
+      });
+    }
+
+    // 2) 회전율 초과 — decay로 누릅니다
+    if (failed.turnover && m.turnover > SIM.GATE.turnoverMax) {
+      out.push({
+        title: '신호를 부드럽게 만드세요',
+        body: '회전율이 <b>' + (m.turnover * 100).toFixed(0) + '%</b>로 한도(70%)를 넘습니다. ' +
+          'decay_linear로 최근 20일을 가중평균하면 비중이 하루 만에 뒤집히지 않아 회전율이 크게 떨어집니다. ' +
+          'Fitness도 같이 올라갑니다.',
+        warn: has('decay_linear')
+          ? '이미 decay_linear가 있습니다. 기간을 더 늘리거나, 재료 자체를 느린 것으로 바꾸는 편이 나을 수 있습니다.'
+          : '',
+        code: 'decay_linear(' + src + ', 20)'
+      });
+    }
+
+    // 3) 회전율에 여유가 있는데 Fitness만 미달 — 더 누를 여지가 있습니다
+    if (failed.fitness && !failed.turnover && m.turnover > 0.125 && m.sharpe > 0) {
+      out.push({
+        title: '회전율을 12.5%까지 더 낮춰 보세요',
+        body: 'Fitness 공식의 분모는 <b>max(회전율, 12.5%)</b>입니다. 지금 회전율 ' +
+          (m.turnover * 100).toFixed(1) + '%를 12.5%까지 낮추면 Fitness가 ' +
+          '약 <b>' + Math.sqrt(m.turnover / 0.125).toFixed(2) + '배</b>까지 올라갈 수 있습니다. ' +
+          '그 아래로는 바닥에 걸려 더 좋아지지 않습니다.',
+        warn: '누르는 과정에서 Sharpe도 같이 떨어지면 실패입니다. 두 숫자를 같이 보세요.',
+        code: 'decay_linear(' + src + ', 40)'
+      });
+    }
+
+    // 4) Sharpe가 약하고 섹터 쏠림이 의심될 때
+    if ((failed.sharpe || failed.fitness) && m.sharpe > 0 &&
+        !has('group_neutralize') && S.neutralize !== 'sector') {
+      out.push({
+        title: '섹터 쏠림을 먼저 지워 보세요',
+        body: '지금은 ' + (S.neutralize === 'market' ? '시장' : '아무') + ' 중립만 걸려 있습니다. ' +
+          '나스닥100은 반도체·소프트웨어가 절반이라 <b>섹터 하나의 방향이 성과를 지배</b>하기 쉽습니다. ' +
+          '섹터 평균을 빼면 남는 것이 진짜 종목 선택 능력입니다.',
+        warn: '중립화하면 대개 Sharpe가 <b>떨어집니다.</b> 그게 정상입니다 — 섹터 베팅으로 벌던 몫이 빠지는 것이니까요. ' +
+          '떨어진 뒤에도 남아 있는 성과가 믿을 수 있는 부분입니다.',
+        code: 'group_neutralize(' + src + ', sector)'
+      });
+    }
+
+    // 5) 자기상관 — 식을 고칠 게 아니라 다른 재료로 가야 합니다
+    if (failed.selfCorr) {
+      out.push({
+        title: '다른 재료로 가세요',
+        body: '이미 저장한 <b>' + U.escape(R.corrWith || '알파') + '</b>와 손익 상관이 ' +
+          R.selfCorr.toFixed(2) + '입니다. 이건 식을 손봐서 될 일이 아닙니다. ' +
+          '가격 계열을 쓰고 있었다면 <b>거래량</b>으로, 시계열을 보고 있었다면 <b>횡단면 구조</b>로 옮기세요.',
+        warn: '',
+        goIdeas: true
+      });
+    }
+
+    // 재료가 몇 개인가 — "단순하게 만들라"는 조언은 항이 여럿일 때만 말이 됩니다
+    let nFields = 0;
+    Object.keys(EXPR.fields).forEach(function (k) {
+      if (new RegExp('\\b' + k + '\\b').test(src)) nFields++;
+    });
+
+    // 6) 한 시기에만 통한 알파 — 항이 여럿일 때만
+    const h = m.halves;
+    if (!out.length && nFields >= 2 &&
+        isFinite(h.first) && isFinite(h.second) && (h.first <= 0 || h.second <= 0)) {
+      out.push({
+        title: '식을 더 단순하게 만드세요',
+        body: '앞 절반 Sharpe ' + (isFinite(h.first) ? h.first.toFixed(2) : '—') + ', 뒤 절반 ' +
+          (isFinite(h.second) ? h.second.toFixed(2) : '—') + '. 한쪽이 음수라 한 시기에만 통한 알파입니다. ' +
+          '지금 재료를 <b>' + nFields + '개</b> 쓰고 있습니다. 항이 많을수록 이런 일이 잦습니다. ' +
+          '<b>항을 하나 지워 보세요.</b> 지워도 성과가 거의 안 변하면 그 항은 잡음을 맞추고 있던 것입니다.',
+        warn: ''
+      });
+    }
+
+    // 7) 신호가 거의 없는 구간 — 식을 손볼 게 아니라 재료를 바꿔야 합니다
+    if (!out.length && m.sharpe > -0.3 && m.sharpe < 0.3) {
+      out.push({
+        title: '재료를 바꾸세요',
+        body: 'Sharpe가 <b>' + m.sharpe.toFixed(2) + '</b>로 0 근처입니다. 방향이 반대인 것도 아니고 ' +
+          '약하게 맞는 것도 아닙니다 — 이 재료에는 <b>쓸 정보가 거의 없다</b>는 뜻입니다. ' +
+          '이럴 때 계수를 흔들거나 기간을 바꾸며 붙잡고 있으면, 결국 우연히 잘 나오는 조합을 찾게 됩니다. ' +
+          '그게 과적합의 시작입니다.',
+        warn: '중립화 설정을 바꿔 보는 것은 한 번쯤 해 볼 만합니다. 하지만 몇 번 해 보고도 ' +
+          '0 근처라면 <b>이 재료를 놓아주세요.</b> 안 되는 것을 안 된다고 기록하는 것도 결과입니다.',
+        goIdeas: true
+      });
+    }
+
+    return out.slice(0, 3);
+  }
+
+  function nextPanel(host) {
+    const list = suggestions(S.result);
+    if (!list.length) return null;
+
+    const p = App.panel('다음 수 <span class="accent">' + list.length + '</span>',
+      { sub: '무엇이 병목인지 읽고 고칠 방향을 제안합니다' });
+
+    list.forEach(function (s) {
+      const box = U.el('div');
+      box.style.cssText = 'padding:11px 0;border-bottom:1px solid var(--line)';
+      let html = '<div style="font-weight:650">' + U.escape(s.title) + '</div>' +
+        '<div class="small" style="margin-top:4px">' + s.body + '</div>';
+      if (s.warn) html += '<div class="tiny" style="margin-top:5px;color:var(--warn)">' + s.warn + '</div>';
+      if (s.code) html += '<div class="mono" style="margin-top:7px;padding:6px 8px;background:var(--panel-2);' +
+        'color:var(--amber);font-size:11.5px;overflow-x:auto;white-space:nowrap">' + U.escape(s.code) + '</div>';
+      box.innerHTML = html;
+
+      if (s.code) {
+        const b = U.el('button', 'btn sm mt', '이렇게 바꾸기');
+        b.addEventListener('click', function () {
+          S.src = s.code;
+          S.mode = 'expr';
+          S.result = null; S.oos = null; S.err = null;
+          draw(host);
+          App.scrollTop();
+        });
+        box.appendChild(b);
+      } else if (s.goIdeas) {
+        const b = U.el('button', 'btn sm mt', '알파 아이디어 사전 열기 →');
+        b.addEventListener('click', function () {
+          if (App.screens.learn && App.screens.learn.open) App.screens.learn.open('ideas');
+          else App.go('learn');
+        });
+        box.appendChild(b);
+      }
+      p.body.appendChild(box);
+    });
+
+    const honest = U.el('div', 'note warn');
+    honest.innerHTML = '<b>제안을 순서대로 다 눌러 보지 마세요.</b> 그렇게 얻은 통과는 통과가 아닙니다. ' +
+      '제안은 "여기가 병목이다"를 알려 줄 뿐이고, <b>왜 그 수정이 말이 되는지</b>는 여러분이 판단해야 합니다. ' +
+      '시뮬레이션을 돌릴 때마다 연구 노트에 시도로 남습니다. 열 번째 시도에서 통과한 알파는 ' +
+      '첫 시도에서 통과한 알파와 같은 값이 아닙니다.';
+    p.body.appendChild(honest);
+    return p;
+  }
+
+  /* ------------------------------------------------------------------------
    *  알파 묶음 — IQC가 알파를 여러 개 요구하는 이유
    *
    *  하나로는 기준을 못 넘겨도, 서로 닮지 않은 것을 섞으면 넘길 수 있습니다.
@@ -1102,6 +1267,10 @@
     host.appendChild(bp);
     if (S.result) {
       host.appendChild(scorePanel(host));
+      if (S.mode === 'expr') {
+        const np = nextPanel(host);
+        if (np) host.appendChild(np);
+      }
       host.appendChild(oosPanel(host));
     }
     if (S.mode === 'expr') {
