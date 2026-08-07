@@ -163,6 +163,20 @@
 
     S.results = { stats: stats, dates: icDates, corr: cm, lo: lo, hi: hi };
     S.running = false;
+
+    // 연구 노트에 기록 — 시계를 바꿔가며 몇 번 돌렸는지가 나중에 중요해집니다.
+    if (root.JOURNAL) {
+      root.JOURNAL.add({
+        kind: 'factor',
+        horizon: S.horizon,
+        years: S.years,
+        range: { start: DATA.state.dates[lo], end: DATA.state.dates[hi] },
+        significant: stats.filter(function (s) { return isFinite(s.t) && Math.abs(s.t) > 2; }).length,
+        top: stats.slice().sort(function (a, b) { return Math.abs(b.ic) - Math.abs(a.ic); })
+          .slice(0, 5)
+          .map(function (s) { return { name: s.name, ic: s.ic, t: s.t, icir: s.icir }; })
+      });
+    }
     draw(host);
   }
 

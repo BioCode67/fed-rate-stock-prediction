@@ -175,7 +175,7 @@
     $$('.nav-item').forEach(function (b) {
       b.addEventListener('click', function () { App.go(b.dataset.screen); });
     });
-    // 숫자키 단축키 (터미널답게). 0 = 시작하기, 1~7 = 각 화면
+    // 숫자키 단축키 (터미널답게). 0 = 시작하기, 1~8 = 각 화면
     document.addEventListener('keydown', function (e) {
       if (e.target.matches('input, select, textarea')) return;
       const items = $$('.nav-item');

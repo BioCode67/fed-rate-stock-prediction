@@ -293,12 +293,14 @@ table.t { display: block; overflow-x: auto; }
  * =========================================================================*/
 .field { display: flex; flex-direction: column; gap: 3px; }
 .field label { font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); }
-select, input[type="text"], input[type="number"], input[type="search"] {
+select, input[type="text"], input[type="number"], input[type="search"], textarea {
   background: var(--panel-2); color: var(--ink);
   border: 1px solid var(--line-strong);
   padding: 5px 8px; font-size: 12.5px; font-family: var(--sans);
   border-radius: 2px; min-width: 90px;
 }
+textarea { line-height: 1.5; }
+textarea:focus { outline: none; border-color: var(--amber); }
 input[type="number"], input.mono { font-family: var(--mono); }
 select:focus, input:focus { outline: none; border-color: var(--amber); }
 input[type="range"] { accent-color: var(--amber); }
@@ -317,6 +319,7 @@ input[type="range"] { accent-color: var(--amber); }
 .btn.buy:hover { background: var(--up-dim); }
 .btn.sell { border-color: #7a3535; color: var(--down); }
 .btn.sell:hover { background: var(--down-dim); }
+.btn.danger { border-color: #7a3535; color: var(--down); background: var(--down-dim); }
 .btn:disabled { opacity: .4; cursor: not-allowed; }
 .btn.sm { padding: 3px 8px; font-size: 11.5px; }
 .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; }
@@ -376,7 +379,7 @@ canvas.spark { width: 72px; height: 22px; display: block; }
   display: inline-block; font-size: 10px; letter-spacing: .06em; text-transform: uppercase;
   padding: 1px 6px; border: 1px solid var(--line-strong); color: var(--ink-3);
 }
-.tag.live { border-color: #2c6f47; color: var(--up); }
+.tag.live, .tag.ok { border-color: #2c6f47; color: var(--up); }
 .tag.demo { border-color: var(--amber-dim); color: var(--amber); }
 
 .spinner {

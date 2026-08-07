@@ -27,6 +27,7 @@
     years: 5, topK: 10, rebalance: 21, cost: 0.05,
     aiHorizon: 21, aiRetrain: 63,
     holdoutMonths: 12,
+    hypothesis: '',
     results: null, running: false, runCount: 0
   };
 
@@ -173,6 +174,25 @@
     S.running = false;
     S.runCount++;
     try { localStorage.setItem('quantlab.runCount', String(S.runCount)); } catch (e) {}
+
+    // 연구 노트에 자동 기록. 학생이 따로 적지 않아도 시도가 쌓이게 합니다.
+    if (root.JOURNAL) {
+      const d = DATA.state.dates;
+      root.JOURNAL.add({
+        kind: 'backtest',
+        hypothesis: S.hypothesis.trim(),
+        config: { years: S.years, topK: S.topK, rebalance: S.rebalance, cost: S.cost,
+                  aiHorizon: S.aiHorizon, holdoutMonths: S.holdoutMonths },
+        range: { start: d[R.devStart], end: d[R.devEnd] },
+        bench: { total: S.results.bench.perf.total, cagr: S.results.bench.perf.cagr,
+                 sharpe: S.results.bench.perf.sharpe },
+        results: results.map(function (r) {
+          return { id: r.id, name: r.name, total: r.perf.total, cagr: r.perf.cagr,
+                   sharpe: r.perf.sharpe, mdd: r.perf.mdd, turnover: r.turnover,
+                   t_stat: r.perf.t_stat };
+        })
+      });
+    }
     draw(host);
   }
 
@@ -215,6 +235,10 @@
         '설정을 여러 번 바꾸면 그중 하나는 우연히 좋아 보입니다. 20번 시도하면 그중 하나가 ' +
         '"5% 유의"로 나오는 건 당연합니다. 좋은 결과가 나왔다면 몇 번째 시도였는지 기록해 두고, ' +
         '채점 구간에서 재현되는지로 판단하세요.';
+      const jb = U.el('button', 'btn sm', '연구 노트에서 내 시도 보기');
+      jb.style.marginTop = '8px';
+      jb.addEventListener('click', function () { App.go('journal'); });
+      w.appendChild(jb);
       p.body.appendChild(w);
     }
     return p;
@@ -281,6 +305,20 @@
     btn.addEventListener('click', function () { run(host); });
     cfg.appendChild(btn);
     p.body.appendChild(cfg);
+
+    // 실행 전에 한 줄 적게 합니다. 리서처가 실제로 하는 일이고,
+    // 나중에 "왜 이 설정이었나"에 답할 수 있는 유일한 방법입니다.
+    const fh = U.el('div', 'field');
+    fh.style.marginTop = '8px';
+    fh.appendChild(U.el('label', '', '이번 시도에서 무엇을 왜 바꿨나 (선택 · 연구 노트에 기록됩니다)'));
+    const hi = U.el('input');
+    hi.type = 'text';
+    hi.placeholder = '예) 비용 0.3%에서도 모멘텀이 버티는지 보려고 리밸런싱을 3개월로 늘림';
+    hi.value = S.hypothesis;
+    hi.style.width = '100%';
+    hi.addEventListener('input', function () { S.hypothesis = hi.value; });
+    fh.appendChild(hi);
+    p.body.appendChild(fh);
 
     if (S.running) {
       const bar = U.el('div', 'bar');
@@ -609,7 +647,20 @@
             picks: oos.picks.slice(-30)
           }
         });
-        msg.textContent = '제출 완료. 순위표 탭에서 확인하세요.';
+        if (root.JOURNAL) {
+          root.JOURNAL.add({
+            kind: 'submit',
+            strategy: oos.id, strategyName: oos.name,
+            hypothesis: S.hypothesis.trim(),
+            config: { years: S.years, topK: S.topK, rebalance: S.rebalance, cost: S.cost,
+                      aiHorizon: S.aiHorizon, holdoutMonths: S.holdoutMonths },
+            dev: { total: dev.perf.total, cagr: dev.perf.cagr, sharpe: dev.perf.sharpe, mdd: dev.perf.mdd },
+            oos: { total: oos.perf.total, cagr: oos.perf.cagr, sharpe: oos.perf.sharpe, mdd: oos.perf.mdd },
+            excess: oos.perf.total - ob.total,
+            runCount: S.runCount
+          });
+        }
+        msg.textContent = '제출 완료. 순위표 탭에서 확인하세요. 연구 노트에도 기록했습니다.';
         msg.className = 'small mt up';
       } catch (e) {
         msg.textContent = e.message;
