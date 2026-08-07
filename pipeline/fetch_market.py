@@ -42,7 +42,10 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from pipeline.universe import (BENCHMARKS, FOMC_DATES, INTRADAY_TICKERS,  # noqa: E402
                                MACRO, NASDAQ100, all_tickers)
 
-OUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "docs", "data")
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# 실데이터는 docs/data/ 로, 가상 데이터는 docs/data-dev/ 로 갑니다.
+# 배포되는 사이트에는 절대 가상 데이터가 섞이지 않게 폴더 자체를 분리했습니다.
+OUT_DIR = os.path.join(ROOT, "docs", "data")
 DAILY_YEARS = 12
 RECENT_YEARS = 2
 
@@ -69,7 +72,7 @@ def write_json(name: str, payload) -> None:
     path = os.path.join(OUT_DIR, name)
     with open(path, "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False, separators=(",", ":"))
-    log(f"저장: docs/data/{name} ({os.path.getsize(path) / 1024:,.0f} KB)")
+    log(f"저장: {os.path.relpath(path, ROOT)} ({os.path.getsize(path) / 1024:,.0f} KB)")
 
 
 # ---------------------------------------------------------------------------
@@ -207,6 +210,10 @@ def main(argv=None) -> int:
     ap.add_argument("--years", type=int, default=DAILY_YEARS)
     args = ap.parse_args(argv)
 
+    global OUT_DIR
+    if args.synthetic:
+        OUT_DIR = os.path.join(ROOT, "docs", "data-dev")
+        log("※ 가상 모드입니다. docs/data-dev/ 에만 저장하며 저장소에는 커밋되지 않습니다.")
     os.makedirs(OUT_DIR, exist_ok=True)
     warnings = [
         "현재 지수에 남아 있는 종목만 담겨 있어 생존 편향이 있습니다. 과거 성과가 실제보다 좋게 보일 수 있습니다.",

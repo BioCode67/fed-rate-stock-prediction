@@ -372,6 +372,100 @@
     return p;
   }
 
+
+  /* ------------------------------------------------------------------------
+   *  순위표에 올리기
+   *  결과만 보내지 않고 거래 기록도 함께 보냅니다. 나중에 재현해서 확인할 수 있도록.
+   * ----------------------------------------------------------------------*/
+  function submitPanel() {
+    const LB = root.LB, CFG = root.CONFIG;
+    const p = App.panel('순위표에 올리기');
+    const days = acc.history.length;
+    const need = (CFG && CFG.minTradingDays) || 60;
+
+    if (!LB || !LB.available) {
+      p.body.innerHTML = '<div class="note warn">순위표 설정이 아직 없습니다.</div>';
+      return p;
+    }
+    if (days < need) {
+      p.body.innerHTML = '<div class="note">최소 <b>' + need + '거래일</b> 이상 진행해야 올릴 수 있습니다. ' +
+        '지금 ' + days + '일 진행했습니다. 짧게 굴린 성적은 대부분 운이기 때문에 막아 두었습니다.</div>';
+      return p;
+    }
+    if (DATA.state.synthetic) {
+      p.body.innerHTML = '<div class="note warn">가상 데이터로 굴린 기록은 순위표에 올릴 수 없습니다.</div>';
+      return p;
+    }
+
+    const row = U.el('div', 'row');
+    const fN = U.el('div', 'field');
+    fN.appendChild(U.el('label', '', '닉네임 (2~20자)'));
+    const nick = U.el('input'); nick.type = 'text'; nick.maxLength = 20;
+    nick.value = localStorage.getItem('quantlab.nick') || '';
+    fN.appendChild(nick); row.appendChild(fN);
+
+    const fT = U.el('div', 'field');
+    fT.appendChild(U.el('label', '', '소속/팀 (선택)'));
+    const team = U.el('input'); team.type = 'text'; team.maxLength = 30;
+    team.value = localStorage.getItem('quantlab.team') || '';
+    fT.appendChild(team); row.appendChild(fT);
+
+    const btn = U.el('button', 'btn primary', '제출');
+    row.appendChild(btn);
+    p.body.appendChild(row);
+
+    const msg = U.el('div', 'small mt');
+    p.body.appendChild(msg);
+    p.body.appendChild(U.el('div', 'note',
+      '제출하면 거래 기록이 함께 저장되어 나중에 그대로 재현할 수 있습니다. ' +
+      '한 번 올린 기록은 수정·삭제할 수 없습니다.'));
+
+    btn.addEventListener('click', function () {
+      const name = nick.value.trim();
+      if (name.length < 2) { msg.textContent = '닉네임을 2자 이상 입력하세요.'; msg.className = 'small mt down'; return; }
+      localStorage.setItem('quantlab.nick', name);
+      localStorage.setItem('quantlab.team', team.value.trim());
+
+      const eq = equity(), be = benchEquity(acc.t);
+      const ret = eq / acc.initial - 1;
+      const bret = isFinite(be) ? be / acc.initial - 1 : null;
+      const rets = [];
+      for (let i = 1; i < acc.history.length; i++) rets.push(acc.history[i].e / acc.history[i - 1].e - 1);
+      const perf = M.perf(rets);
+
+      btn.disabled = true;
+      msg.textContent = '보내는 중…'; msg.className = 'small mt';
+      LB.submit({
+        nickname: name,
+        team: team.value.trim() || null,
+        strategy: acc.strategy || 'manual',
+        strategy_name: acc.strategyName || '직접 매매',
+        start_date: DATA.state.dates[acc.startIndex],
+        end_date: DATA.state.dates[acc.t],
+        trading_days: acc.history.length,
+        initial: acc.initial,
+        final_value: Math.round(eq),
+        ret: +ret.toFixed(6),
+        bench_ret: bret === null ? null : +bret.toFixed(6),
+        excess: bret === null ? null : +(ret - bret).toFixed(6),
+        sharpe: isFinite(perf.sharpe) ? +perf.sharpe.toFixed(4) : null,
+        mdd: isFinite(perf.mdd) ? +perf.mdd.toFixed(4) : null,
+        trades: acc.trades.length,
+        fee: acc.fee,
+        data_updated: (DATA.state.meta && DATA.state.meta.updated) || null,
+        audit: { trades: acc.trades.slice(0, 500), history: acc.history.filter(function (_, i) { return i % 5 === 0; }) }
+      }).then(function () {
+        msg.textContent = '올렸습니다. 순위표에서 확인하세요.';
+        msg.className = 'small mt up';
+      }).catch(function (e) {
+        msg.textContent = e.message;
+        msg.className = 'small mt down';
+        btn.disabled = false;
+      });
+    });
+    return p;
+  }
+
   function draw(host) {
     host.innerHTML = '';
     if (!acc) acc = load();
@@ -384,6 +478,7 @@
     leftCol.appendChild(holdingsPanel());
     leftCol.appendChild(curvePanel());
     const rightCol = U.el('div');
+    rightCol.appendChild(submitPanel());
     rightCol.appendChild(tradesPanel());
     grid.appendChild(leftCol); grid.appendChild(rightCol);
     host.appendChild(grid);

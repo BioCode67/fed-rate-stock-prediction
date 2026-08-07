@@ -21,7 +21,10 @@
     ready: false
   };
 
-  function url(name) { return 'data/' + name; }
+  // 기본은 실데이터(data/). 주소에 ?dev=1 을 붙이면 개발용 가상 데이터(data-dev/)를 봅니다.
+  const DIR = /[?&]dev=1/.test(location.search) ? 'data-dev/' : 'data/';
+  D.dev = DIR !== 'data/';
+  function url(name) { return DIR + name; }
 
   function getJSON(name) {
     return fetch(url(name), { cache: 'no-cache' }).then(function (r) {
