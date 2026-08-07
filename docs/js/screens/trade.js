@@ -32,7 +32,14 @@
       startIndex: opts.startIndex,
       positions: {},                 // ticker -> {qty, cost}
       trades: [],
-      history: []                    // [{d, equity, bench}]
+      history: [],                   // [{d, equity, bench}]
+      // 전략 자동매매용 (직접 매매면 null)
+      strategy: opts.strategy || 'manual',
+      strategyName: opts.strategyName || '직접 매매',
+      rebalance: opts.rebalance || 21,
+      topK: opts.topK || 10,
+      lastReb: -1e9,
+      interventions: 0               // 전략 계좌에서 사용자가 직접 손댄 횟수
     };
   }
 
@@ -106,10 +113,45 @@
     return null;
   }
 
+  // 전략이 시키는 대로 포트폴리오를 다시 짭니다 (그날 종가 체결).
+  function rebalanceToStrategy() {
+    const st = root.STRAT && root.STRAT.list.filter(function (x) { return x.id === acc.strategy; })[0];
+    if (!st) return;
+    const scores = st.score(acc.t);
+    const keys = Object.keys(scores);
+    if (keys.length < 5) return;
+    keys.sort(function (a, b) { return scores[b] - scores[a]; });
+    const chosen = (acc.strategy === 'equal' ? keys : keys.slice(0, acc.topK));
+    const px = {};
+    chosen.forEach(function (t) { px[t] = priceOf(t); });
+    const usable = chosen.filter(function (t) { return isFinite(px[t]) && px[t] > 0; });
+    if (!usable.length) return;
+
+    // 목표에 없는 종목은 전부 팔고
+    Object.keys(acc.positions).forEach(function (t) {
+      if (usable.indexOf(t) < 0) sell(t, acc.positions[t].qty);
+    });
+    // 목표 비중에 맞춰 조정
+    const value = equity();
+    const per = value / usable.length;
+    usable.forEach(function (t) {
+      const cur = (acc.positions[t] ? acc.positions[t].qty : 0) * px[t];
+      const diff = per - cur;
+      const qty = Math.floor(Math.abs(diff) / (px[t] * (1 + acc.fee)));
+      if (qty <= 0) return;
+      if (diff > 0) buy(t, qty); else sell(t, qty);
+    });
+    acc.lastReb = acc.t;
+  }
+
   function advance(days) {
     const last = DATA.state.dates.length - 1;
     for (let k = 0; k < days && acc.t < last; k++) {
       acc.t++;
+      // 전략 계좌라면 리밸런싱 주기마다 자동으로 갈아탑니다.
+      if (acc.strategy !== 'manual' && acc.t - acc.lastReb >= acc.rebalance) {
+        rebalanceToStrategy();
+      }
       record();
     }
     save();
@@ -156,19 +198,104 @@
     const inpFee = U.el('input'); inpFee.type = 'number'; inpFee.value = '0.05'; inpFee.step = '0.01'; inpFee.min = '0';
     fFee.appendChild(inpFee); row.appendChild(fFee);
 
-    const btn = U.el('button', 'btn primary', '계좌 열고 시작');
-    btn.addEventListener('click', function () {
-      acc = newAccount({
-        cash: +selCash.value,
-        fee: (+inpFee.value) / 100,
-        startIndex: +selStart.value
-      });
-      record();
-      save();
-      draw(host);
-    });
-    row.appendChild(btn);
+    row.appendChild(btn0());
     p.body.appendChild(row);
+
+    // --- 매매 방식 ---
+    const row2 = U.el('div', 'row mt');
+    const fMode = U.el('div', 'field');
+    fMode.appendChild(U.el('label', '', '매매 방식'));
+    const selMode = U.el('select');
+    [['manual', '직접 매매 (내가 고른다)'], ['strategy', '전략 자동매매 (규칙이 고른다)']].forEach(function (o) {
+      const e = U.el('option', '', o[1]); e.value = o[0]; selMode.appendChild(e);
+    });
+    fMode.appendChild(selMode); row2.appendChild(fMode);
+
+    const fStrat = U.el('div', 'field hidden');
+    fStrat.appendChild(U.el('label', '', '전략'));
+    const selStrat = U.el('select');
+    selStrat.style.minWidth = '170px';
+    (root.STRAT ? root.STRAT.list : []).forEach(function (st) {
+      const e = U.el('option', '', st.name + '  [' + st.cat + ']'); e.value = st.id;
+      selStrat.appendChild(e);
+    });
+    fStrat.appendChild(selStrat); row2.appendChild(fStrat);
+
+    const fReb = U.el('div', 'field hidden');
+    fReb.appendChild(U.el('label', '', '리밸런싱'));
+    const selReb = U.el('select');
+    [[5, '1주마다'], [21, '1개월마다'], [63, '3개월마다']].forEach(function (o) {
+      const e = U.el('option', '', o[1]); e.value = String(o[0]);
+      if (o[0] === 21) e.selected = true;
+      selReb.appendChild(e);
+    });
+    fReb.appendChild(selReb); row2.appendChild(fReb);
+
+    const fK = U.el('div', 'field hidden');
+    fK.appendChild(U.el('label', '', '보유 종목'));
+    const selK = U.el('select');
+    [5, 10, 20].forEach(function (k) {
+      const e = U.el('option', '', k + '종목'); e.value = String(k);
+      if (k === 10) e.selected = true;
+      selK.appendChild(e);
+    });
+    fK.appendChild(selK); row2.appendChild(fK);
+
+    selMode.addEventListener('change', function () {
+      const on = selMode.value === 'strategy';
+      [fStrat, fReb, fK].forEach(function (f) { f.classList.toggle('hidden', !on); });
+      note.textContent = on
+        ? '전략이 정해진 주기마다 자동으로 갈아탑니다. 중간에 직접 사고파는 것도 가능합니다 — 그 개입이 도움이 되는지 확인해 보세요.'
+        : '내가 직접 종목을 고르고 사고팝니다.';
+    });
+    const note = U.el('div', 'tiny');
+    note.textContent = '내가 직접 종목을 고르고 사고팝니다.';
+    row2.appendChild(note);
+    p.body.appendChild(row2);
+
+    const status = U.el('div', 'small mt');
+    p.body.appendChild(status);
+
+    function btn0() {
+      const btn = U.el('button', 'btn primary', '계좌 열고 시작');
+      btn.addEventListener('click', async function () {
+        const mode = selMode.value;
+        const stId = selStrat.value;
+        const st = (root.STRAT ? root.STRAT.list : []).filter(function (x) { return x.id === stId; })[0];
+
+        acc = newAccount({
+          cash: +selCash.value,
+          fee: (+inpFee.value) / 100,
+          startIndex: +selStart.value,
+          strategy: mode === 'strategy' ? stId : 'manual',
+          strategyName: mode === 'strategy' && st ? st.name : '직접 매매',
+          rebalance: +selReb.value,
+          topK: +selK.value
+        });
+
+        // AI 전략은 먼저 워크포워드 학습이 필요합니다.
+        if (mode === 'strategy' && st && st.prepare) {
+          btn.disabled = true;
+          status.textContent = 'AI를 학습시키는 중… (구간마다 과거만 보고 다시 배웁니다)';
+          const rebDates = [];
+          for (let i = acc.startIndex; i < DATA.state.dates.length - 1; i += acc.rebalance) rebDates.push(i);
+          try {
+            await st.prepare(acc.startIndex, DATA.state.dates.length - 1, rebDates,
+              { horizon: 21, retrainEvery: 63, trainWindow: 1000 },
+              function (f) { status.textContent = 'AI 학습 ' + Math.round(f * 100) + '%'; });
+          } catch (e) {
+            status.textContent = '학습 실패: ' + e.message;
+            btn.disabled = false;
+            return;
+          }
+        }
+        if (mode === 'strategy') rebalanceToStrategy();
+        record();
+        save();
+        draw(host);
+      });
+      return btn;
+    }
 
     p.body.appendChild(U.el('div', 'note',
       '주문은 그날 종가로 체결되고 매수·매도마다 비용을 뗍니다. 공매도와 레버리지는 없습니다. ' +
@@ -177,7 +304,10 @@
   }
 
   function accountPanel() {
-    const p = App.panel('계좌', { sub: DATA.state.dates[acc.t] + ' 기준' });
+    const auto = acc.strategy !== 'manual';
+    const p = App.panel('계좌' + (auto ? ' <span class="accent">' + U.escape(acc.strategyName) + '</span>' : ''),
+      { sub: DATA.state.dates[acc.t] + ' 기준' +
+        (auto ? ' · 다음 리밸런싱까지 ' + Math.max(0, acc.rebalance - (acc.t - acc.lastReb)) + '일' : '') });
     const eq = equity(), be = benchEquity(acc.t);
     const ret = eq / acc.initial - 1;
     const bret = isFinite(be) ? be / acc.initial - 1 : NaN;
@@ -257,12 +387,14 @@
     bBuy.addEventListener('click', function () {
       const err = buy(sel.value, Math.floor(+qty.value || 0));
       if (err) { msg.textContent = err; msg.className = 'tiny down'; return; }
+      if (acc.strategy !== 'manual') acc.interventions++;   // 전략 계좌에 손댄 횟수
       save(); onDone();
     });
     const bSell = U.el('button', 'btn sell', '매도');
     bSell.addEventListener('click', function () {
       const err = sell(sel.value, Math.floor(+qty.value || 0));
       if (err) { msg.textContent = err; msg.className = 'tiny down'; return; }
+      if (acc.strategy !== 'manual') acc.interventions++;
       save(); onDone();
     });
     // 금액 기준 빠른 주문
@@ -310,6 +442,42 @@
       ['종목', '섹터', { label: '수량', num: true }, { label: '평단', num: true },
        { label: '현재가', num: true }, { label: '평가액', num: true },
        { label: '손익', num: true }, { label: '비중', num: true }], rows));
+
+    // --- 섹터 집중도 ---
+    // 실무에서 반드시 확인하는 항목입니다. 종목을 10개 담아도 전부 같은 섹터면
+    // 사실상 한 종목에 몰아넣은 것과 다르지 않습니다.
+    const bySector = {};
+    tickers.forEach(function (t) {
+      const v = acc.positions[t].qty * priceOf(t);
+      const sec = DATA.sector(t);
+      bySector[sec] = (bySector[sec] || 0) + v;
+    });
+    const stockValue = Object.keys(bySector).reduce(function (a, k) { return a + bySector[k]; }, 0);
+    const secs = Object.keys(bySector).sort(function (a, b) { return bySector[b] - bySector[a]; });
+
+    const box = U.el('div');
+    box.style.padding = '12px';
+    box.appendChild(U.el('div', 'tiny', '섹터 집중도 — 주식 평가액 기준'));
+    secs.forEach(function (sec) {
+      const w = bySector[sec] / stockValue;
+      const line = U.el('div', 'row center');
+      line.style.cssText = 'gap:8px;margin:3px 0';
+      const nm = U.el('span', 'tiny'); nm.style.width = '90px'; nm.textContent = sec;
+      const bar = App.bar(w, w > 0.4 ? 'neg' : '');
+      bar.style.cssText = 'flex:1;max-width:320px';
+      const val = U.el('span', 'tiny mono'); val.textContent = (w * 100).toFixed(0) + '%';
+      line.appendChild(nm); line.appendChild(bar); line.appendChild(val);
+      box.appendChild(line);
+    });
+    const top = bySector[secs[0]] / stockValue;
+    if (top > 0.4) {
+      const warn = U.el('div', 'note warn');
+      warn.innerHTML = '<b>' + U.escape(secs[0]) + ' 비중이 ' + (top * 100).toFixed(0) + '%입니다.</b> ' +
+        '종목을 여러 개 담아도 같은 섹터면 사실상 한 곳에 몰아넣은 것입니다. ' +
+        '그 섹터가 무너지면 분산 효과가 없습니다. 실무에서는 섹터별 상한(예: 30%)을 두는 것이 보통입니다.';
+      box.appendChild(warn);
+    }
+    p.body.appendChild(box);
     return p;
   }
 
