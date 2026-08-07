@@ -17,6 +17,7 @@
   const S = {
     selected: { momentum: 1, lowvol: 1, reversal: 1, equal: 1 },
     years: 5, topK: 10, rebalance: 21, cost: 0.05,
+    aiHorizon: 21, aiRetrain: 63,
     results: null, running: false, progress: 0
   };
 
@@ -113,15 +114,36 @@
     const hi = n - 1;
     const lo = Math.max(260, hi - S.years * 252);      // 지표 계산에 최소 1년 필요
 
+    // 리밸런싱 날짜 목록 (AI 전략이 미리 학습할 지점)
+    const rebDates = [];
+    for (let i = lo; i < hi; i += S.rebalance) rebDates.push(i);
+
     const results = [];
     for (let k = 0; k < ids.length; k++) {
       const st = STRAT.list.filter(function (x) { return x.id === ids[k]; })[0];
       if (!st) continue;
-      const r = await backtest(st, lo, hi, function (f) {
+
+      const setProg = function (f, phase) {
         S.progress = (k + f) / ids.length;
         const el = U.$('#stratProg');
         if (el) el.style.width = Math.round(S.progress * 100) + '%';
+        const lbl = U.$('#stratPhase');
+        if (lbl) lbl.textContent = st.name + ' — ' + phase;
+      };
+
+      // AI 전략은 먼저 워크포워드로 학습합니다 (과거만 보고 배우도록)
+      if (st.prepare) {
+        setProg(0, '학습 중');
+        await st.prepare(lo, hi, rebDates,
+          { horizon: S.aiHorizon, retrainEvery: S.aiRetrain, trainWindow: 1000 },
+          function (f) { setProg(f * 0.8, '학습 중 ' + Math.round(f * 100) + '%'); });
+      }
+      const r = await backtest(st, lo, hi, function (f) {
+        setProg((st.prepare ? 0.8 : 0) + f * (st.prepare ? 0.2 : 1), '백테스트 중');
       });
+      r.trained = st._trained;
+      r.importance = st._importance;
+      r.featureNames = st.featureNames;
       results.push(r);
     }
 
@@ -188,6 +210,8 @@
       S.topK, function (v) { S.topK = +v; }));
     cfg.appendChild(mk('리밸런싱', [[5, '1주마다'], [21, '1개월마다'], [63, '3개월마다']],
       S.rebalance, function (v) { S.rebalance = +v; }));
+    cfg.appendChild(mk('AI 예측 시계', [[5, '5일 뒤'], [21, '1개월 뒤'], [63, '3개월 뒤']],
+      S.aiHorizon, function (v) { S.aiHorizon = +v; }));
 
     const fc = U.el('div', 'field');
     fc.appendChild(U.el('label', '', '편도 비용(%)'));
@@ -207,6 +231,8 @@
       const i = U.el('i'); i.id = 'stratProg'; i.style.width = '0%';
       bar.appendChild(i);
       p.body.appendChild(bar);
+      const ph = U.el('div', 'tiny'); ph.id = 'stratPhase'; ph.textContent = '준비 중…';
+      p.body.appendChild(ph);
     }
     return p;
   }
@@ -282,6 +308,33 @@
     });
     out.push(p3);
 
+    // AI 모델이 무엇을 보고 골랐는가
+    const ai = R.list.filter(function (r) { return r.importance && r.featureNames; });
+    if (ai.length) {
+      const pAI = App.panel('AI가 참고한 팩터', { sub: '학습된 모델이 어떤 값을 많이 썼는지 (합이 1)' });
+      ai.forEach(function (r) {
+        const items = r.featureNames.map(function (n, i) {
+          return { name: n, v: r.importance[i] || 0 };
+        }).sort(function (a, b) { return b.v - a.v; });
+        const box = U.el('div');
+        box.style.marginBottom = '12px';
+        box.innerHTML = '<div class="small"><b>' + U.escape(r.name) + '</b> ' +
+          '<span class="tiny">재학습 ' + (r.trained || 0) + '회</span></div>';
+        items.forEach(function (it) {
+          const line = U.el('div', 'row center');
+          line.style.cssText = 'gap:8px;margin:2px 0';
+          const nm = U.el('span', 'tiny'); nm.style.cssText = 'width:150px'; nm.textContent = it.name;
+          const bar = App.bar(it.v / (items[0].v || 1));
+          bar.style.cssText = 'flex:1;max-width:260px';
+          const val = U.el('span', 'tiny mono'); val.textContent = (it.v * 100).toFixed(1) + '%';
+          line.appendChild(nm); line.appendChild(bar); line.appendChild(val);
+          box.appendChild(line);
+        });
+        pAI.body.appendChild(box);
+      });
+      out.push(pAI);
+    }
+
     // 해석
     const best = R.list.slice().sort(function (a, b) { return b.perf.sharpe - a.perf.sharpe; })[0];
     const beatCount = R.list.filter(function (r) { return r.perf.cagr > R.bench.perf.cagr; }).length;
@@ -304,10 +357,117 @@
     return out;
   }
 
+
+  /* ------------------------------------------------------------------------
+   *  순위표에 제출 (대회 방식)
+   *  실제 퀀트 대회처럼 "전략 + 성과 + 근거(고른 종목 기록)"를 함께 냅니다.
+   * ----------------------------------------------------------------------*/
+  function submitPanel() {
+    const LB = root.LB, CFG = root.CONFIG;
+    const R = S.results;
+    const p = App.panel('순위표에 <span class="accent">제출</span>',
+      { sub: '백테스트한 전략을 대회 기록으로 남깁니다' });
+
+    if (!LB || !LB.available) {
+      p.body.innerHTML = '<div class="note warn">순위표 설정이 없습니다.</div>';
+      return p;
+    }
+    if (DATA.state.synthetic) {
+      p.body.innerHTML = '<div class="note warn">가상 데이터로 만든 기록은 제출할 수 없습니다.</div>';
+      return p;
+    }
+
+    const row = U.el('div', 'row');
+
+    const fS = U.el('div', 'field');
+    fS.appendChild(U.el('label', '', '제출할 전략'));
+    const selS = U.el('select');
+    selS.style.minWidth = '180px';
+    R.list.forEach(function (r, i) {
+      const o = U.el('option', '', r.name + '  (' + (r.perf.total * 100).toFixed(1) + '%)');
+      o.value = String(i);
+      selS.appendChild(o);
+    });
+    fS.appendChild(selS); row.appendChild(fS);
+
+    const fN = U.el('div', 'field');
+    fN.appendChild(U.el('label', '', '닉네임 (2~20자)'));
+    const nick = U.el('input'); nick.type = 'text'; nick.maxLength = 20;
+    nick.value = localStorage.getItem('quantlab.nick') || '';
+    fN.appendChild(nick); row.appendChild(fN);
+
+    const fT = U.el('div', 'field');
+    fT.appendChild(U.el('label', '', '소속/팀 (선택)'));
+    const team = U.el('input'); team.type = 'text'; team.maxLength = 30;
+    team.value = localStorage.getItem('quantlab.team') || '';
+    fT.appendChild(team); row.appendChild(fT);
+
+    const btn = U.el('button', 'btn primary', '제출');
+    row.appendChild(btn);
+    p.body.appendChild(row);
+
+    const msg = U.el('div', 'small mt');
+    p.body.appendChild(msg);
+    p.body.appendChild(U.el('div', 'note',
+      '제출하면 전략 설정과 리밸런싱마다 고른 종목이 함께 저장됩니다. ' +
+      '누구든 같은 설정으로 다시 돌려 확인할 수 있어야 순위표를 믿을 수 있기 때문입니다. ' +
+      '한 번 올린 기록은 수정·삭제할 수 없습니다.'));
+
+    btn.addEventListener('click', function () {
+      const r = R.list[+selS.value];
+      const name = nick.value.trim();
+      if (name.length < 2) { msg.textContent = '닉네임을 2자 이상 입력하세요.'; msg.className = 'small mt down'; return; }
+      localStorage.setItem('quantlab.nick', name);
+      localStorage.setItem('quantlab.team', team.value.trim());
+
+      const bench = R.bench.perf;
+      btn.disabled = true;
+      msg.textContent = '보내는 중…'; msg.className = 'small mt';
+      LB.submit({
+        nickname: name,
+        team: team.value.trim() || null,
+        strategy: r.id,
+        strategy_name: r.name,
+        start_date: DATA.state.dates[R.lo],
+        end_date: DATA.state.dates[R.hi],
+        trading_days: r.ret.length,
+        initial: 100000,
+        final_value: Math.round(100000 * (1 + r.perf.total)),
+        ret: +r.perf.total.toFixed(6),
+        bench_ret: +bench.total.toFixed(6),
+        excess: +(r.perf.total - bench.total).toFixed(6),
+        sharpe: isFinite(r.perf.sharpe) ? +r.perf.sharpe.toFixed(4) : null,
+        mdd: isFinite(r.perf.mdd) ? +r.perf.mdd.toFixed(4) : null,
+        trades: r.nReb,
+        fee: S.cost / 100,
+        data_updated: (DATA.state.meta && DATA.state.meta.updated) || null,
+        audit: {
+          kind: 'strategy',
+          config: { topK: S.topK, rebalance: S.rebalance, years: S.years, cost: S.cost,
+                    aiHorizon: S.aiHorizon, aiRetrain: S.aiRetrain },
+          turnover: +r.turnover.toFixed(3),
+          trained: r.trained || null,
+          picks: r.picks.slice(-40)
+        }
+      }).then(function () {
+        msg.textContent = '올렸습니다. 순위표 탭에서 확인하세요.';
+        msg.className = 'small mt up';
+      }).catch(function (e) {
+        msg.textContent = e.message;
+        msg.className = 'small mt down';
+        btn.disabled = false;
+      });
+    });
+    return p;
+  }
+
   function draw(host) {
     host.innerHTML = '';
     host.appendChild(pickerPanel(host));
-    if (S.results) resultPanels(host).forEach(function (p) { host.appendChild(p); });
+    if (S.results) {
+      resultPanels(host).forEach(function (p) { host.appendChild(p); });
+      host.appendChild(submitPanel());
+    }
     else if (!S.running) {
       const p = App.panel('전략이란');
       p.body.innerHTML =
