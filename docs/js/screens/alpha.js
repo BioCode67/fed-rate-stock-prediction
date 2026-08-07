@@ -291,9 +291,10 @@
       p.body.appendChild(bar);
     }
 
-    p.body.appendChild(U.el('div', 'note',
-      '평가는 <b>개발 구간에서만</b> 돌아갑니다. 최근 12개월(채점 구간)은 여기서도 잠겨 있습니다. ' +
-      '여기서 미리 보면 대회 구조 자체가 의미를 잃습니다.'));
+    const lock = U.el('div', 'note');
+    lock.innerHTML = '평가는 <b>개발 구간에서만</b> 돌아갑니다. 최근 12개월(채점 구간)은 여기서도 잠겨 있습니다. ' +
+      '여기서 미리 보면 대회 구조 자체가 의미를 잃습니다.';
+    p.body.appendChild(lock);
 
     // 프리셋
     const pre = U.el('div', 'row mt');

@@ -566,10 +566,11 @@
     const resultBox = U.el('div');
     p.body.appendChild(resultBox);
 
-    p.body.appendChild(U.el('div', 'note',
-      '제출하면 같은 설정으로 <b>채점 구간</b>을 다시 돌립니다. 그 성적이 순위표에 오릅니다. ' +
-      '전략 설정과 고른 종목이 함께 저장되어 누구든 재현해 확인할 수 있습니다. ' +
-      '한 번 올린 기록은 수정·삭제할 수 없습니다.'));
+    const snote = U.el('div', 'note');
+    snote.innerHTML = '제출하면 같은 설정으로 <b>채점 구간</b>을 다시 돌립니다. 그 성적이 순위표에 오릅니다. ' +
+      '전략 설정과 고른 종목이 함께 저장되어, 순위표에서 <b>줄을 눌러</b> 누구든 열어 보고 재현할 수 있습니다. ' +
+      '한 번 올린 기록은 수정·삭제할 수 없습니다.';
+    p.body.appendChild(snote);
 
     btn.addEventListener('click', async function () {
       const name = nick.value.trim();
@@ -713,6 +714,23 @@
       S.selected[id] = 1;
       S.selected.equal = 1;
       S.selected.momentum = 1;
+      S.results = null;
+    },
+    // 순위표에서 남의 기록을 그대로 불러올 때 씁니다(재현).
+    load: function (id, cfg) {
+      S.selected = {};
+      S.selected[id] = 1;
+      S.selected.equal = 1;
+      if (cfg) {
+        if (cfg.topK) S.topK = +cfg.topK;
+        if (cfg.rebalance) S.rebalance = +cfg.rebalance;
+        if (cfg.years) S.years = +cfg.years;
+        if (cfg.cost !== undefined) S.cost = +cfg.cost;
+        if (cfg.aiHorizon) S.aiHorizon = +cfg.aiHorizon;
+        if (cfg.aiRetrain) S.aiRetrain = +cfg.aiRetrain;
+        if (cfg.holdoutMonths) S.holdoutMonths = +cfg.holdoutMonths;
+      }
+      S.hypothesis = '남의 기록 재현 — 순위표에서 불러옴';
       S.results = null;
     }
   });

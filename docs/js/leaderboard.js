@@ -31,7 +31,7 @@
     opts = opts || {};
     const limit = opts.limit || 100;
     // audit 안의 개발 구간 성과만 뽑아 옵니다(거래기록 전체는 무거워서 제외).
-    let qs = '?select=nickname,team,strategy,strategy_name,start_date,end_date,trading_days,' +
+    let qs = '?select=id,nickname,team,strategy,strategy_name,start_date,end_date,trading_days,' +
       'ret,bench_ret,excess,sharpe,mdd,trades,created_at,dev:audit->dev' +
       '&order=' + (opts.order || 'ret.desc') + '&limit=' + limit;
     if (opts.strategy) qs += '&strategy=eq.' + encodeURIComponent(opts.strategy);
@@ -39,6 +39,16 @@
       if (!r.ok) return r.text().then(function (t) { throw new Error(describe(r.status, t)); });
       return r.json();
     }).catch(netError);
+  };
+
+  // 기록 하나의 감사 자료(설정·고른 종목)를 받아옵니다.
+  // 목록에서는 무거워서 빼 두고, 학생이 그 줄을 눌렀을 때만 가져옵니다.
+  LB.audit = function (id) {
+    const qs = '?select=audit,fee,data_updated&id=eq.' + encodeURIComponent(id) + '&limit=1';
+    return fetch(endpoint(qs), { headers: headers() }).then(function (r) {
+      if (!r.ok) return r.text().then(function (t) { throw new Error(describe(r.status, t)); });
+      return r.json();
+    }).then(function (rows) { return rows && rows[0] ? rows[0] : null; }).catch(netError);
   };
 
   // 기록 올리기

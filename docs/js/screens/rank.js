@@ -5,7 +5,110 @@
   'use strict';
   const U = root.U, DATA = root.DATA, App = root.App, LB = root.LB, CFG = root.CONFIG;
 
-  const S = { rows: null, error: null, loading: false, order: 'ret.desc' };
+  const S = { rows: null, error: null, loading: false, order: 'ret.desc',
+              open: null, audit: {}, auditErr: {} };
+
+  /* ------------------------------------------------------------------------
+   *  감사 자료 — 이 순위표가 "믿을 만하다"고 말할 수 있는 근거
+   *
+   *  성과 숫자만 있으면 아무 말이나 할 수 있습니다. 그래서 제출할 때 설정과
+   *  리밸런싱마다 고른 종목을 함께 저장합니다. 여기서 그걸 펼쳐 보고,
+   *  같은 설정을 내 실험실로 그대로 불러올 수 있게 했습니다.
+   * ----------------------------------------------------------------------*/
+  function loadAudit(id, host) {
+    if (S.audit[id] || S.auditErr[id]) return;
+    LB.audit(id).then(function (r) {
+      S.audit[id] = r || { audit: null };
+      draw(host);
+    }).catch(function (e) {
+      S.auditErr[id] = e.message;
+      draw(host);
+    });
+  }
+
+  function auditPanel(row, host) {
+    const p = App.panel('기록 열어 보기 <span class="accent">' + U.escape(row.nickname) + '</span>',
+      { sub: (row.strategy_name || row.strategy) + ' · ' + row.start_date + ' ~ ' + row.end_date });
+
+    const close = U.el('button', 'btn sm', '닫기');
+    close.addEventListener('click', function () { S.open = null; draw(host); });
+    p.actions.appendChild(close);
+
+    if (S.auditErr[row.id]) {
+      p.body.innerHTML = '<div class="note bad">' + U.escape(S.auditErr[row.id]) + '</div>';
+      return p;
+    }
+    const got = S.audit[row.id];
+    if (!got) {
+      const d = U.el('div', 'empty');
+      d.innerHTML = '<span class="spinner"></span> 불러오는 중…';
+      p.body.appendChild(d);
+      loadAudit(row.id, host);
+      return p;
+    }
+
+    const a = got.audit || {};
+    const cfg = a.config || {};
+
+    if (!a.config) {
+      p.body.appendChild(U.el('div', 'note warn',
+        '이 기록에는 설정이 저장돼 있지 않습니다. 사이트 초기에 올라온 기록이거나 직접매매 기록입니다. ' +
+        '재현할 수 없는 성과는 그만큼만 믿으면 됩니다.'));
+    } else {
+      const g = U.el('div', 'grid g4');
+      g.appendChild(App.stat('보유 종목', cfg.topK + '종목', '상위 몇 개를 담았나'));
+      g.appendChild(App.stat('리밸런싱', cfg.rebalance + '거래일마다', '얼마나 자주 갈아탔나'));
+      g.appendChild(App.stat('편도 비용', cfg.cost + '%', '거래마다 뗀 비용'));
+      g.appendChild(App.stat('채점 구간 길이', cfg.holdoutMonths + '개월', '개발 ' + cfg.years + '년'));
+      p.body.appendChild(g);
+
+      const g2 = U.el('div', 'grid g4 mt');
+      g2.appendChild(App.stat('평균 회전율',
+        isFinite(a.turnover) ? (a.turnover * 100).toFixed(0) + '%' : '—', '리밸런싱마다'));
+      g2.appendChild(App.stat('그때까지 백테스트',
+        a.runCount !== undefined && a.runCount !== null ? a.runCount + '회' : '—',
+        a.runCount >= 8 ? '여러 번 시도한 결과' : '시도 횟수'));
+      g2.appendChild(App.stat('AI 재학습', a.trained ? a.trained + '회' : '—', 'AI 전략일 때만'));
+      g2.appendChild(App.stat('데이터 갱신일', got.data_updated || '—', '같은 데이터끼리 비교하세요'));
+      p.body.appendChild(g2);
+    }
+
+    // 리밸런싱마다 고른 종목 — 이게 있어야 "재현 가능"이라는 말이 성립합니다
+    if (a.picks && a.picks.length) {
+      p.body.appendChild(U.el('div', 'tiny mt',
+        '채점 구간에서 리밸런싱할 때마다 고른 종목 (최근 ' + a.picks.length + '회)'));
+      a.picks.slice().reverse().forEach(function (pk) {
+        const line = U.el('div', 'small');
+        line.style.margin = '4px 0';
+        line.innerHTML = '<span class="tiny mono">' + U.escape(pk.date) + '</span> ' +
+          (pk.tickers || []).map(function (t) { return '<span class="tick">' + U.escape(t) + '</span>'; }).join(' ');
+        p.body.appendChild(line);
+      });
+    }
+
+    // 같은 설정으로 내 실험실에서 돌려 보기
+    if (a.config && row.strategy && row.strategy.indexOf('alpha:') !== 0) {
+      const btn = U.el('button', 'btn primary mt', '같은 설정으로 내 실험실에서 돌려 보기');
+      btn.addEventListener('click', function () {
+        const sc = App.screens.strategy;
+        if (sc && sc.load) sc.load(row.strategy, cfg);
+        App.go('strategy');
+      });
+      p.body.appendChild(btn);
+      p.body.appendChild(U.el('div', 'tiny',
+        '전략과 설정을 그대로 옮겨 담습니다. 개발 구간 성적이 비슷하게 나오는지 확인해 보세요.'));
+    } else if (a.config) {
+      p.body.appendChild(U.el('div', 'note mt',
+        '이 기록은 참가자가 직접 만든 알파입니다. 식은 그 사람의 브라우저에만 있어 여기서 되살릴 수 없습니다. ' +
+        '고른 종목과 설정만으로 어떤 성격의 알파였는지 짐작해 보세요.'));
+    }
+
+    const why = U.el('div', 'note');
+    why.innerHTML = '순위표를 믿을 수 있는 이유가 이 화면입니다. 성과 숫자만 있으면 무슨 말이든 할 수 있습니다. ' +
+      '실제 대회와 운용사도 같은 것을 요구합니다 — 결과가 아니라 <b>결과에 이르는 과정</b>을 제출하라고.';
+    p.body.appendChild(why);
+    return p;
+  }
 
   function fetchRows(host) {
     S.loading = true; S.error = null;
@@ -76,6 +179,8 @@
       }
 
       return {
+        __cls: S.open === r.id ? 'sel' : '',
+        __click: function () { S.open = (S.open === r.id ? null : r.id); draw(host); },
         cells: [
           medal(i), name,
           U.el('span', 'tiny', r.strategy_name || r.strategy),
@@ -98,13 +203,19 @@
        { label: '기간', num: true }, '구간'],
       rows, { scroll: true }));
 
+    if (S.open) {
+      const row = S.rows.filter(function (x) { return x.id === S.open; })[0];
+      if (row) p.__audit = auditPanel(row, host);
+    }
+
     const legend = U.el('div', 'note');
     legend.style.margin = '10px 12px';
     legend.innerHTML =
       '<b>채점 수익률</b>은 제출 후에 처음 열린 구간의 성적입니다. 순위는 이 값으로 매깁니다.<br>' +
       '<b>격차</b>는 채점 − 개발입니다. <span class="up">0에 가까우면</span> 개발 구간과 채점 구간에서 ' +
       '비슷하게 작동했다는 뜻이고, <span class="down">크게 벌어지면</span> 개발 구간에 과적합했을 ' +
-      '가능성이 큽니다. 실제 대회에서 순위가 뒤집히는 지점이 바로 여기입니다.';
+      '가능성이 큽니다. 실제 대회에서 순위가 뒤집히는 지점이 바로 여기입니다.<br>' +
+      '<b>줄을 누르면</b> 그 기록의 설정과 리밸런싱마다 고른 종목을 열어 볼 수 있습니다.';
     p.body.appendChild(legend);
     return p;
   }
@@ -134,7 +245,9 @@
       host.appendChild(p);
       return;
     }
-    host.appendChild(tablePanel(host));
+    const tp = tablePanel(host);
+    host.appendChild(tp);
+    if (tp.__audit) host.appendChild(tp.__audit);
     host.appendChild(guidePanel());
     if (S.rows === null && !S.loading && !S.error) fetchRows(host);
   }
