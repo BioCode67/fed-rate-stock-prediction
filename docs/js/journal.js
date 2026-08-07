@@ -142,13 +142,14 @@
     if (alps.length) {
       out.push('## 알파 평가 기록');
       out.push('');
-      out.push('| # | 시각 | 알파 | 식 | Sharpe | Fitness | 회전율 | 자기상관 | 판정 |');
-      out.push('|---|---|---|---|---|---|---|---|---|');
+      out.push('| # | 시각 | 알파 | 식 | 출처 | Sharpe | Fitness | 회전율 | 자기상관 | 판정 |');
+      out.push('|---|---|---|---|---|---|---|---|---|---|');
       alps.slice().reverse().forEach(function (e, i) {
         // IQC 채점표가 생기기 전 기록은 IC/t만 있습니다.
         const legacy = !isFinite(e.sharpe);
         out.push('| ' + (i + 1) + ' | ' + new Date(e.ts).toLocaleDateString('ko-KR') +
           ' | ' + (e.name || '—') + ' | `' + (e.formula || '').replace(/\|/g, '/') + '` | ' +
+          (e.origin || '—') + ' | ' +
           (legacy ? 'IC ' + num(e.ic, 4) : num(e.sharpe)) + ' | ' +
           (legacy ? 't ' + num(e.t) : num(e.fitness)) + ' | ' +
           (legacy ? '—' : (isFinite(e.turnover) ? (e.turnover * 100).toFixed(1) + '%' : '—')) + ' | ' +
@@ -157,6 +158,10 @@
       });
       out.push('');
       out.push('기준: Sharpe ≥ 1.25 · Fitness ≥ 1.0 · 회전율 1~70% · 자기상관 < 0.7 (WorldQuant BRAIN 제출 기준)');
+      out.push('');
+      out.push('출처 열은 이 식이 어디서 왔는지입니다 — 직접 쓴 것인지, 예제·아이디어 사전에서 가져온 것인지, ' +
+        '"다음 수" 제안을 적용한 것인지. 가져온 뒤 고쳤다면 `· 고침`이 붙습니다. ' +
+        '남의 아이디어에서 출발하는 것은 흠이 아니지만, 어디서 출발했는지 밝히는 것과 밝히지 않는 것은 다릅니다.');
       out.push('');
     }
 

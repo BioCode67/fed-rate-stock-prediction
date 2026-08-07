@@ -39,6 +39,7 @@
     err: null,
     showOps: false,
     opsQuery: '',
+    origin: '직접 작성',      // 이 식이 어디서 왔는가 (연구 노트에 남습니다)
     oos: null,                  // 채점 구간 결과
     oosRunning: false,
     peeks: 0                    // 채점 구간을 몇 번 봤는가
@@ -85,6 +86,7 @@
     S.src = src;
     S.mode = 'expr';
     S.name = '링크로 받은 알파';
+    S.origin = '링크로 받음';
     if (parts[2]) {
       const c = parts[2].split('-');
       if (c[0]) S.neutralize = c[0];
@@ -205,6 +207,7 @@
         name: S.name || '(이름 없음)',
         formula: sc.label,
         mode: S.mode,
+        origin: S.origin,
         sharpe: m.sharpe, fitness: m.fitness, turnover: m.turnover, returns: m.returns,
         maxCorr: isFinite(selfCorr) ? Math.abs(selfCorr) : undefined,
         passed: S.result.grade.pass,
@@ -249,7 +252,15 @@
         out.textContent = '✗ ' + chk.error;
       }
     }
-    ta.addEventListener('input', validate);
+    // 불러온 식을 한 글자라도 고치면 그때부터는 "직접 작성"입니다.
+    // (예제를 그대로 돌린 것과 고쳐서 돌린 것은 다른 시도이므로 구분해 둡니다)
+    const loadedSrc = S.src;
+    ta.addEventListener('input', function () {
+      if (S.origin !== '직접 작성' && ta.value.trim() !== loadedSrc.trim()) {
+        S.origin = S.origin.replace(/^(.*?)( · 고침)?$/, '$1') + ' · 고침';
+      }
+      validate();
+    });
     p.body.appendChild(ta);
     p.body.appendChild(out);
     validate();
@@ -871,6 +882,7 @@
         b.addEventListener('click', function () {
           S.src = s.code;
           S.mode = 'expr';
+          S.origin = '다음 수 · ' + s.title;
           S.result = null; S.oos = null; S.err = null;
           draw(host);
           App.scrollTop();
@@ -1084,6 +1096,7 @@
         '<div class="r-why">' + U.escape(r.why) + '</div>';
       card.addEventListener('click', function () {
         S.mode = 'expr'; S.src = r.code; S.name = r.name;
+        S.origin = '예제 · ' + r.name;
         S.editing = null; S.result = null; S.err = null;
         draw(host);
         App.scrollTop();
@@ -1287,10 +1300,11 @@
   App.register('alpha', {
     render: draw,
     // 다른 화면(배우기의 알파 사전 등)에서 식을 들고 넘어올 때 씁니다.
-    load: function (src, name) {
+    load: function (src, name, origin) {
       S.mode = 'expr';
       S.src = src;
       S.name = name || '';
+      S.origin = origin || '직접 작성';
       S.editing = null;
       S.result = null;
       S.oos = null;

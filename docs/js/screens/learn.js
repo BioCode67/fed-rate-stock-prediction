@@ -204,7 +204,20 @@
     ['리밸런싱 (Rebalancing)', '정해진 주기마다 포트폴리오를 다시 짜는 것. 잦을수록 신호를 빨리 반영하지만 비용이 늘어납니다.'],
     ['t값 (t-statistic)', '결과가 우연일 가능성을 보는 통계량. |t| > 2 면 우연으로 보기 어렵습니다. 단, 여러 번 시도했다면 이 기준도 느슨해집니다.'],
     ['롱숏 (Long-Short)', '오를 종목은 사고 내릴 종목은 공매도하는 방식. 시장 방향과 무관한 수익을 노립니다.'],
-    ['팩터 노출 (Factor exposure)', '내 포트폴리오가 어떤 팩터에 얼마나 기울어 있는가. 의도하지 않은 쏠림을 발견하는 데 씁니다.']
+    ['팩터 노출 (Factor exposure)', '내 포트폴리오가 어떤 팩터에 얼마나 기울어 있는가. 의도하지 않은 쏠림을 발견하는 데 씁니다.'],
+
+    /* --- IQC·BRAIN에서 실제로 쓰는 말 (알파 만들기 화면에 나옵니다) --- */
+    ['Fitness', 'IQC 고유 지표. Sharpe × √(|수익률| / max(회전율, 12.5%)). 회전율이 분모에 있어 많이 사고팔아 낸 성과를 깎습니다. 통과 기준은 1.0. Sharpe만 좋고 Fitness가 낮으면 "비용을 감당 못 하는 알파"라는 뜻입니다.'],
+    ['회전율 바닥 (12.5%)', 'Fitness 분모의 max(회전율, 0.125). 회전율을 계속 낮춰도 12.5% 아래로는 Fitness가 더 좋아지지 않습니다. "안 사고 안 팔면 만점"이 되는 것을 막는 장치입니다. 12개월 모멘텀처럼 원래 느린 알파에서 감쇠를 늘려도 아무 변화가 없는 이유입니다.'],
+    ['중립화 (Neutralization)', '알파 값에서 그룹 평균을 빼는 것. 시장 중립은 전체 평균을, 섹터 중립은 섹터별 평균을 뺍니다. 중립화하면 대개 Sharpe가 떨어지는데 그게 정상입니다 — 섹터를 맞혀서 벌던 몫이 빠지는 것이고, 남는 것이 진짜 종목 선택 능력입니다.'],
+    ['감쇠 (Decay)', '오늘 신호만 쓰지 않고 최근 d일을 가중평균하는 것(decay_linear). 비중이 하루 만에 뒤집히지 않아 회전율이 떨어집니다. Fitness를 올리는 가장 표준적인 방법이지만, 너무 누르면 Sharpe도 같이 떨어집니다.'],
+    ['자기상관 (Self-correlation)', '내가 이미 낸 알파와 일별 손익이 얼마나 닮았는가. IQC는 0.7을 넘으면 같은 알파를 두 번 낸 것으로 봅니다. 식이 달라 보여도 손익이 닮으면 새 알파가 아닙니다. 이건 식을 손봐서 될 일이 아니라 재료를 바꿔야 하는 문제입니다.'],
+    ['IS / OS (In-sample / Out-of-sample)', '개발 구간 / 채점 구간. 개발 구간에서 좋은 것은 쉽고, 채점 구간에서도 좋은 것이 어렵습니다. 둘의 격차가 곧 과적합의 크기입니다. 채점 구간을 여러 번 들여다보면 그 구간도 개발 구간이 되어 버립니다.'],
+    ['알파 묶음 (Alpha pool)', '여러 알파를 합쳐 굴리는 것. IQC가 알파를 여러 개 요구하는 이유입니다. 주의할 점 두 가지 — 서로 닮으면 합쳐도 나아지지 않고, Sharpe가 음수인 알파를 넣으면 오히려 떨어집니다. 합칠 때는 금액이 아니라 <b>위험 기준</b>(각 알파를 변동성으로 나눠서)으로 섞어야 변동성 큰 알파가 묶음을 지배하지 않습니다.'],
+    ['윈저라이즈 (Winsorize)', '평균에서 표준편차 n배 넘게 벗어난 값을 그 경계로 잘라내는 것. zscore는 크기 정보를 살리지만 이상치 하나에 흔들립니다. rank()는 애초에 이상치에 강한 대신 크기 차이를 버립니다. 둘 중 무엇이 나은지는 알파마다 다르므로 재 봐야 합니다.'],
+    ['횡단면 연산자 / 시계열 연산자', '횡단면(rank, zscore, group_neutralize…)은 <b>그날 종목들끼리</b> 비교합니다. 시계열(ts_mean, ts_delta, ts_corr…)은 <b>같은 종목의 과거와</b> 비교합니다. 이름 앞의 ts_ 가 그 구분입니다. 둘을 겹쳐 쓰는 것이 알파 만들기의 핵심 기술입니다.'],
+    ['Margin (마진)', '1달러를 거래해서 남는 돈(bp 단위). 회전율이 높아도 마진이 두꺼우면 견딥니다. 반대로 마진이 편도 거래비용보다 얇으면 그 알파는 실제로는 손실입니다. 채점표의 Margin과 실험실의 비용 민감도를 함께 보세요.'],
+    ['Fast Expression', 'WorldQuant BRAIN의 알파 기술 언어. 이 사이트의 식 언어가 그 부분집합이고, 연산자 이름을 일부러 같게 맞췄습니다. 여기서 쓴 식은 BRAIN에 거의 그대로 옮겨집니다 — 다만 BRAIN은 데이터 필드가 훨씬 많습니다.']
   ];
 
   /* ------------------------------------------------------------------------
@@ -417,7 +430,8 @@
           '<div class="i-watch">조심할 점 · ' + d.watch + '</div>';
         const go = U.el('button', 'btn sm mt', '이 식으로 열기 →');
         go.addEventListener('click', function () {
-          if (App.screens.alpha && App.screens.alpha.load) App.screens.alpha.load(d.code, d.name);
+          if (App.screens.alpha && App.screens.alpha.load)
+            App.screens.alpha.load(d.code, d.name, '아이디어 사전 · ' + d.name);
           else App.go('alpha');
         });
         box.appendChild(go);
@@ -664,8 +678,9 @@
       }).forEach(function (g) {
         const box = U.el('div');
         box.style.cssText = 'padding:8px 0;border-bottom:1px solid var(--line)';
+        // 설명은 우리가 쓴 글이므로 <b> 같은 강조를 그대로 살립니다(이름은 이스케이프).
         box.innerHTML = '<div style="font-weight:650">' + U.escape(g[0]) + '</div>' +
-          '<div class="small">' + U.escape(g[1]) + '</div>';
+          '<div class="small">' + g[1] + '</div>';
         list.appendChild(box);
       });
       if (!list.children.length) list.appendChild(U.el('div', 'empty', '찾는 용어가 없습니다.'));

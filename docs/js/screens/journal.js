@@ -150,6 +150,12 @@
           ' / 종목 상한 ' + (cfg.maxWeight >= 1 ? '없음' : Math.round((cfg.maxWeight || 0) * 100) + '%') +
           ' / 평가 ' + (cfg.years || '?') + '년' +
           (e.passed ? ' · 제출 가능' : ' · 기준 미달')));
+        if (e.origin) {
+          const o = U.el('div', 'tiny');
+          o.style.color = 'var(--amber)';
+          o.textContent = '출처 · ' + e.origin;
+          box.appendChild(o);
+        }
       } else {
         // 옛 기록(IC 방식으로 재던 시절)
         g.appendChild(App.stat('IC', isFinite(e.ic) ? e.ic.toFixed(4) : '—',
