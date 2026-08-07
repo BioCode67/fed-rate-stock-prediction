@@ -58,6 +58,23 @@
       const name = U.el('span');
       name.innerHTML = '<b>' + U.escape(r.nickname) + '</b>' +
         (r.team ? ' <span class="tiny">' + U.escape(r.team) + '</span>' : '');
+
+      // 개발 구간 성과가 함께 저장돼 있으면 채점 구간과의 격차를 보여 줍니다.
+      // 격차가 크다는 것은 개발 구간에 과적합했다는 뜻입니다.
+      let devCell = U.el('span', 'tiny', '—');
+      let gapCell = U.el('span', 'tiny', '—');
+      if (r.dev && r.dev.total !== undefined && r.dev.total !== null) {
+        const dv = Number(r.dev.total);
+        devCell = App.chg(dv, 1);
+        const gap = Number(r.ret) - dv;
+        const g = U.el('span', Math.abs(gap) < 0.1 ? 'up' : 'down');
+        g.textContent = (gap >= 0 ? '+' : '') + (gap * 100).toFixed(1) + '%p';
+        g.title = Math.abs(gap) < 0.1
+          ? '개발 구간과 채점 구간의 성적이 비슷합니다 (과적합 신호 약함)'
+          : '개발 구간과 채점 구간의 차이가 큽니다 (과적합 가능성)';
+        gapCell = g;
+      }
+
       return {
         cells: [
           medal(i), name,
@@ -66,7 +83,7 @@
           App.chg(r.excess, 1),
           isFinite(r.sharpe) && r.sharpe !== null ? Number(r.sharpe).toFixed(2) : '—',
           r.mdd !== null ? (Number(r.mdd) * 100).toFixed(1) + '%' : '—',
-          r.trades === null ? '—' : U.comma(r.trades),
+          devCell, gapCell,
           U.comma(r.trading_days) + '일',
           (r.start_date || '').slice(2) + ' ~ ' + (r.end_date || '').slice(2)
         ]
@@ -75,10 +92,20 @@
 
     p.body.appendChild(App.table(
       [{ label: '#' }, '참가자', '전략',
-       { label: '수익률', num: true }, { label: 'QQQ 대비', num: true },
+       { label: '채점 수익률', num: true }, { label: 'QQQ 대비', num: true },
        { label: '샤프', num: true }, { label: 'MDD', num: true },
-       { label: '거래', num: true }, { label: '기간', num: true }, '구간'],
+       { label: '개발 구간', num: true }, { label: '격차', num: true },
+       { label: '기간', num: true }, '구간'],
       rows, { scroll: true }));
+
+    const legend = U.el('div', 'note');
+    legend.style.margin = '10px 12px';
+    legend.innerHTML =
+      '<b>채점 수익률</b>은 제출 후에 처음 열린 구간의 성적입니다. 순위는 이 값으로 매깁니다.<br>' +
+      '<b>격차</b>는 채점 − 개발입니다. <span class="up">0에 가까우면</span> 개발 구간과 채점 구간에서 ' +
+      '비슷하게 작동했다는 뜻이고, <span class="down">크게 벌어지면</span> 개발 구간에 과적합했을 ' +
+      '가능성이 큽니다. 실제 대회에서 순위가 뒤집히는 지점이 바로 여기입니다.';
+    p.body.appendChild(legend);
     return p;
   }
 

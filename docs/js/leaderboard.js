@@ -30,8 +30,9 @@
   LB.list = function (opts) {
     opts = opts || {};
     const limit = opts.limit || 100;
+    // audit 안의 개발 구간 성과만 뽑아 옵니다(거래기록 전체는 무거워서 제외).
     let qs = '?select=nickname,team,strategy,strategy_name,start_date,end_date,trading_days,' +
-      'ret,bench_ret,excess,sharpe,mdd,trades,created_at' +
+      'ret,bench_ret,excess,sharpe,mdd,trades,created_at,dev:audit->dev' +
       '&order=' + (opts.order || 'ret.desc') + '&limit=' + limit;
     if (opts.strategy) qs += '&strategy=eq.' + encodeURIComponent(opts.strategy);
     return fetch(endpoint(qs), { headers: headers() }).then(function (r) {
