@@ -37,8 +37,13 @@
     result: null,
     running: false,
     err: null,
-    showOps: false
+    showOps: false,
+    oos: null,                  // 채점 구간 결과
+    oosRunning: false,
+    peeks: 0                    // 채점 구간을 몇 번 봤는가
   };
+
+  try { S.peeks = +(localStorage.getItem('quantlab.osPeeks') || 0); } catch (e) {}
 
   function nf() { return STRAT.aiFeatures.length; }
   function blank() { return new Array(nf()).fill(0); }
@@ -103,6 +108,7 @@
 
     S.err = null;
     S.running = true;
+    S.oos = null;
     draw(host);
 
     const n = DATA.state.dates.length;
@@ -329,6 +335,166 @@
     lock.innerHTML = '평가는 <b>개발 구간(IS)에서만</b> 돌아갑니다. 최근 12개월(채점 구간·OS)은 여기서도 잠겨 있습니다. ' +
       'BRAIN도 제출 전에는 IS 성적만 보여 줍니다. 미리 보면 대회 구조 자체가 의미를 잃습니다.';
     p.body.appendChild(lock);
+    return p;
+  }
+
+  /* ------------------------------------------------------------------------
+   *  채점 구간(OS)에서 확인
+   *
+   *  이 사이트에서 가장 중요한 순간입니다. 개발 구간에서 좋았던 알파가
+   *  처음 보는 구간에서도 같은 성적을 내는가. IQC도, 실무도 이것만 봅니다.
+   *
+   *  다만 여기서 딜레마가 생깁니다. 채점 구간을 여러 번 보면 그 구간도
+   *  결국 개발 구간이 됩니다. 못 보게 막으면 배우지 못하고, 열어 두면
+   *  남용됩니다. 그래서 열어 두되 <b>몇 번 봤는지 세어 보여 줍니다.</b>
+   *  실제 대회가 제출 횟수를 제한하는 것과 같은 이유입니다.
+   * ----------------------------------------------------------------------*/
+  async function runOOS(host) {
+    let sc;
+    try { sc = currentScorer(); }
+    catch (e) { S.err = e.message; draw(host); return; }
+
+    S.oosRunning = true;
+    draw(host);
+
+    const n = DATA.state.dates.length;
+    const lo = n - 1 - HOLDOUT;
+    const hi = n - 1;
+    const cfg = S.result.config;
+
+    let m;
+    try {
+      m = await SIM.run(sc.fn, {
+        lo: lo, hi: hi,
+        neutralize: cfg.neutralize, decay: cfg.decay, maxWeight: cfg.maxWeight
+      }, function (f) {
+        const el = U.$('#oosProg');
+        if (el) el.style.width = Math.round(f * 100) + '%';
+      });
+    } catch (e) {
+      S.err = e.message;
+      S.oosRunning = false;
+      draw(host);
+      return;
+    }
+
+    S.peeks++;
+    try { localStorage.setItem('quantlab.osPeeks', String(S.peeks)); } catch (e) {}
+
+    S.oos = {
+      m: m,
+      grade: SIM.grade(m),
+      range: { start: DATA.state.dates[lo], end: DATA.state.dates[hi] },
+      peek: S.peeks
+    };
+    S.oosRunning = false;
+
+    if (root.JOURNAL) {
+      root.JOURNAL.add({
+        kind: 'alpha-oos',
+        name: S.name || '(이름 없음)',
+        formula: S.result.label,
+        is: { sharpe: S.result.m.sharpe, fitness: S.result.m.fitness, turnover: S.result.m.turnover },
+        oos: { sharpe: m.sharpe, fitness: m.fitness, turnover: m.turnover },
+        gap: S.result.m.sharpe - m.sharpe,
+        peek: S.peeks,
+        config: cfg
+      });
+    }
+    draw(host);
+  }
+
+  function oosPanel(host) {
+    const R = S.result;
+    const p = App.panel('채점 구간에서 확인 <span class="accent">OUT-OF-SAMPLE</span>',
+      { sub: '개발 구간에서 좋았던 것이 처음 보는 구간에서도 통하는가' });
+
+    if (!S.oos) {
+      const warn = U.el('div', 'note warn');
+      warn.innerHTML =
+        '여기를 누르면 <b>그동안 잠겨 있던 최근 12개월</b>에서 같은 알파를 돌립니다. ' +
+        'IQC의 제출, 캐글의 Private 리더보드에 해당합니다.<br><br>' +
+        '<b>주의.</b> 채점 구간을 여러 번 보면 그 구간도 결국 개발 구간이 됩니다. ' +
+        '"OS에서 잘 나올 때까지 식을 고치는" 순간 이 구조는 무너집니다. ' +
+        '그래서 막지는 않되 <b>몇 번 봤는지 세어 둡니다.</b> ' +
+        (S.peeks ? '지금까지 <b>' + S.peeks + '번</b> 봤습니다. ' : '아직 한 번도 보지 않았습니다. ') +
+        '발표할 때 이 횟수를 함께 밝히세요.';
+      p.body.appendChild(warn);
+
+      const btn = U.el('button', 'btn' + (S.peeks >= 3 ? '' : ' primary'),
+        S.oosRunning ? '채점 중…' : '채점 구간에서 돌리기');
+      btn.disabled = S.oosRunning;
+      btn.addEventListener('click', function () { runOOS(host); });
+      p.body.appendChild(btn);
+
+      if (S.oosRunning) {
+        const bar = U.el('div', 'bar');
+        bar.style.marginTop = '10px';
+        const i = U.el('i'); i.id = 'oosProg'; i.style.width = '0%';
+        bar.appendChild(i);
+        p.body.appendChild(bar);
+      }
+      if (S.peeks >= 3) {
+        p.body.appendChild(U.el('div', 'tiny',
+          '이미 여러 번 봤습니다. 지금부터 나오는 채점 구간 성적은 "처음 보는 구간"의 성적이 아닙니다.'));
+      }
+      return p;
+    }
+
+    const O = S.oos, m = O.m, im = R.m;
+    p.body.appendChild(U.el('div', 'tiny',
+      O.range.start + ' ~ ' + O.range.end + ' · ' + m.n + '거래일 · ' + O.peek + '번째 확인'));
+
+    const rows = [
+      ['Sharpe', im.sharpe, m.sharpe, function (v) { return v.toFixed(2); }, SIM.GATE.sharpe],
+      ['Fitness', im.fitness, m.fitness, function (v) { return v.toFixed(2); }, SIM.GATE.fitness],
+      ['회전율', im.turnover, m.turnover, function (v) { return (v * 100).toFixed(1) + '%'; }, null],
+      ['연 수익률', im.returns, m.returns, function (v) { return (v * 100).toFixed(1) + '%'; }, null]
+    ].map(function (r) {
+      const gapEl = U.el('span', '');
+      if (isFinite(r[1]) && isFinite(r[2])) {
+        const d = r[2] - r[1];
+        gapEl.className = Math.abs(d) < (r[4] ? 0.3 : 0.05) ? 'up' : 'down';
+        gapEl.textContent = (d >= 0 ? '+' : '') + r[3](d).replace('%', '') + (r[3](0).indexOf('%') >= 0 ? '%p' : '');
+      } else gapEl.textContent = '—';
+      return { cells: [r[0],
+        isFinite(r[1]) ? r[3](r[1]) : '—',
+        isFinite(r[2]) ? r[3](r[2]) : '—',
+        gapEl] };
+    });
+    p.body.appendChild(App.table(
+      ['', { label: '개발 구간(IS)', num: true }, { label: '채점 구간(OS)', num: true }, { label: '차이', num: true }],
+      rows));
+
+    const sGap = (isFinite(im.sharpe) && isFinite(m.sharpe)) ? im.sharpe - m.sharpe : NaN;
+    const held = isFinite(sGap) && Math.abs(sGap) < 0.5 && m.sharpe > 0;
+    const v = U.el('div', 'verdict ' + (held ? 'pass' : 'fail'));
+    v.appendChild(U.el('span', 'v-badge', held ? '재현됨' : '무너짐'));
+    const vt = U.el('div', 'v-text');
+    vt.innerHTML = held
+      ? '<b>채점 구간에서도 비슷하게 나왔습니다.</b> Sharpe ' + im.sharpe.toFixed(2) + ' → ' +
+        m.sharpe.toFixed(2) + '. 이것이 알파가 진짜라는 유일한 증거입니다. ' +
+        '개발 구간 성적이 아무리 좋아도 이 표에서 무너지면 소용없고, 반대로 개발 구간이 평범해도 ' +
+        '여기서 버티면 쓸 만한 알파입니다.'
+      : '<b>개발 구간과 채점 구간의 차이가 큽니다.</b> Sharpe ' +
+        (isFinite(im.sharpe) ? im.sharpe.toFixed(2) : '—') + ' → ' +
+        (isFinite(m.sharpe) ? m.sharpe.toFixed(2) : '—') + '. ' +
+        '개발 구간에만 맞는 알파를 만든 것입니다(과적합). ' +
+        '설정을 여러 번 바꿔가며 가장 좋은 것을 고를수록 이 격차가 커집니다. ' +
+        '캐글에서 Public 1등이 Private에서 수백 등으로 떨어지는 일이 매번 벌어지는 이유입니다.<br><br>' +
+        '<b>여기서 하지 말아야 할 것:</b> 이 결과를 보고 식을 고쳐 다시 돌리는 것. ' +
+        '그러면 채점 구간이 개발 구간이 됩니다. 다른 아이디어로 처음부터 다시 시작하세요.';
+    v.appendChild(vt);
+    p.body.appendChild(v);
+
+    const again = U.el('button', 'btn sm', '접기');
+    again.addEventListener('click', function () { S.oos = null; draw(host); });
+    p.actions.appendChild(again);
+
+    if (m.n < 120) {
+      p.body.appendChild(U.el('div', 'note warn',
+        '채점 구간이 ' + m.n + '거래일밖에 안 됩니다. 짧은 구간의 성적은 운의 비중이 큽니다.'));
+    }
     return p;
   }
 
@@ -841,7 +1007,10 @@
     host.innerHTML = '';
     const bp = builderPanel(host);
     host.appendChild(bp);
-    if (S.result) host.appendChild(scorePanel(host));
+    if (S.result) {
+      host.appendChild(scorePanel(host));
+      host.appendChild(oosPanel(host));
+    }
     if (S.mode === 'expr') {
       host.appendChild(recipePanel(host));
       host.appendChild(opsPanel(host, bp.__insert));

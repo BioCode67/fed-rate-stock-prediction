@@ -15,7 +15,8 @@
     backtest: { label: '백테스트', cls: 'tag' },
     submit: { label: '제출', cls: 'tag ok' },
     factor: { label: '팩터 분석', cls: 'tag demo' },
-    alpha: { label: '알파 평가', cls: 'tag demo' }
+    alpha: { label: '알파 평가', cls: 'tag demo' },
+    'alpha-oos': { label: '알파 채점', cls: 'tag ok' }
   };
 
   function when(ts) {
@@ -163,6 +164,22 @@
         box.appendChild(g);
         box.appendChild(U.el('div', 'tiny', 'IQC 채점표가 생기기 전에 남긴 기록입니다.'));
       }
+    } else if (e.kind === 'alpha-oos') {
+      box.appendChild(U.el('div', 'mono small', e.formula || ''));
+      const fmt = function (x, d) { return isFinite(x) ? x.toFixed(d === undefined ? 2 : d) : '—'; };
+      const rows = [
+        ['Sharpe', e.is.sharpe, e.oos.sharpe, 2],
+        ['Fitness', e.is.fitness, e.oos.fitness, 2]
+      ].map(function (r) {
+        const g2 = U.el('span', (isFinite(r[1]) && isFinite(r[2]) && Math.abs(r[2] - r[1]) < 0.5) ? 'up' : 'down');
+        g2.textContent = (isFinite(r[1]) && isFinite(r[2]))
+          ? ((r[2] - r[1] >= 0 ? '+' : '') + (r[2] - r[1]).toFixed(2)) : '—';
+        return { cells: [r[0], fmt(r[1], r[3]), fmt(r[2], r[3]), g2] };
+      });
+      box.appendChild(App.table(
+        ['', { label: '개발(IS)', num: true }, { label: '채점(OS)', num: true }, { label: '차이', num: true }],
+        rows));
+      box.appendChild(U.el('div', 'tiny', e.peek + '번째 채점 구간 확인'));
     } else if (e.kind === 'factor' && e.top) {
       const rows = e.top.map(function (t) {
         return { cells: [t.name, t.ic.toFixed(4), isFinite(t.t) ? t.t.toFixed(2) : '—',
@@ -197,7 +214,7 @@
     const p = App.panel('기록', { sub: '줄을 누르면 자세히 볼 수 있습니다' });
 
     [['all', '전체'], ['backtest', '백테스트'], ['submit', '제출'],
-     ['alpha', '알파'], ['factor', '팩터']].forEach(function (o) {
+     ['alpha', '알파'], ['alpha-oos', '알파 채점'], ['factor', '팩터']].forEach(function (o) {
       const b = U.el('button', 'btn sm' + (S.filter === o[0] ? ' primary' : ''), o[1]);
       b.addEventListener('click', function () { S.filter = o[0]; draw(host); });
       p.actions.appendChild(b);
@@ -243,6 +260,13 @@
       return e.strategyName + ' 제출 · 채점 구간 ' +
         (e.oos.total >= 0 ? '+' : '') + (e.oos.total * 100).toFixed(1) + '% (QQQ 대비 ' +
         (e.excess >= 0 ? '+' : '') + (e.excess * 100).toFixed(1) + '%p)';
+    }
+    if (e.kind === 'alpha-oos') {
+      const g2 = (isFinite(e.gap)) ? ((e.gap >= 0 ? '-' : '+') + Math.abs(e.gap).toFixed(2)) : '—';
+      return (e.name || '알파') + ' 채점 구간 · Sharpe ' +
+        (isFinite(e.is.sharpe) ? e.is.sharpe.toFixed(2) : '—') + ' → ' +
+        (isFinite(e.oos.sharpe) ? e.oos.sharpe.toFixed(2) : '—') +
+        ' (격차 ' + g2 + ') · ' + e.peek + '번째 확인';
     }
     if (e.kind === 'alpha') {
       if (isFinite(e.sharpe)) {

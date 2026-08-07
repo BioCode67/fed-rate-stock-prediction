@@ -96,6 +96,7 @@
     const subs = list.filter(function (e) { return e.kind === 'submit'; });
     const facs = list.filter(function (e) { return e.kind === 'factor'; });
     const alps = list.filter(function (e) { return e.kind === 'alpha'; });
+    const aoos = list.filter(function (e) { return e.kind === 'alpha-oos'; });
 
     const out = [];
     out.push('# 퀀트 연구 노트');
@@ -156,6 +157,21 @@
       });
       out.push('');
       out.push('기준: Sharpe ≥ 1.25 · Fitness ≥ 1.0 · 회전율 1~70% · 자기상관 < 0.7 (WorldQuant BRAIN 제출 기준)');
+      out.push('');
+    }
+
+    if (aoos.length) {
+      out.push('## 알파 채점 구간 확인 기록');
+      out.push('');
+      out.push('| # | 시각 | 알파 | IS Sharpe | OS Sharpe | 격차 | 몇 번째 확인 |');
+      out.push('|---|---|---|---|---|---|---|');
+      aoos.slice().reverse().forEach(function (e, i) {
+        out.push('| ' + (i + 1) + ' | ' + new Date(e.ts).toLocaleDateString('ko-KR') +
+          ' | ' + (e.name || '—') + ' | ' + num(e.is && e.is.sharpe) + ' | ' + num(e.oos && e.oos.sharpe) +
+          ' | ' + num(e.gap) + ' | ' + (e.peek || '?') + ' |');
+      });
+      out.push('');
+      out.push('채점 구간을 여러 번 볼수록 그 구간도 개발 구간이 됩니다. 확인 횟수를 함께 밝히는 것이 정직한 보고입니다.');
       out.push('');
     }
 
