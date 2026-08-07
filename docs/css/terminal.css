@@ -99,6 +99,10 @@ body {
   grid-template-areas: "brand top" "rail main" "status status";
   height: 100vh;
 }
+/* 그리드 자식은 기본값이 min-width:auto 라서 내용보다 좁아지지 못합니다.
+   그대로 두면 긴 표·긴 숫자가 화면 밖으로 화면 전체를 밀어냅니다(모바일 가로 스크롤).
+   min-width:0 을 주면 자식이 줄어들고, 넘치는 내용은 각자의 스크롤 영역 안에서 처리됩니다. */
+.app > *, .grid > *, .panel, .panel-body, .main > * { min-width: 0; }
 
 .brand-cell {
   grid-area: brand;
@@ -242,7 +246,8 @@ body {
  * =========================================================================*/
 .stat { padding: 10px 12px; border: 1px solid var(--line); background: var(--panel); }
 .stat .k { font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); }
-.stat .v { font-family: var(--mono); font-size: 21px; font-variant-numeric: tabular-nums; margin-top: 2px; letter-spacing: -.01em; }
+.stat .v { font-family: var(--mono); font-size: 21px; font-variant-numeric: tabular-nums; margin-top: 2px; letter-spacing: -.01em; overflow-wrap: anywhere; }
+.stat .k, .stat .d { overflow-wrap: anywhere; }
 .stat .d { font-size: 11px; color: var(--ink-3); font-family: var(--mono); }
 .up { color: var(--up); }
 .down { color: var(--down); }
@@ -270,6 +275,9 @@ table.t tbody tr:hover { background: var(--panel-2); }
 table.t tbody tr.sel { background: var(--amber-dim); }
 table.t tbody tr.sel td { color: var(--ink); }
 .tbl-scroll { max-height: 460px; overflow: auto; }
+/* 표는 좁은 화면에서 자기 영역 안에서만 가로로 스크롤합니다(페이지 전체가 밀리지 않게). */
+table.t { display: block; overflow-x: auto; }
+@media (min-width: 761px) { table.t { display: table; } }
 
 .tick { font-family: var(--mono); font-weight: 600; letter-spacing: .02em; }
 .sector { font-size: 11px; color: var(--ink-3); }
