@@ -119,12 +119,21 @@
     for (let i = 0; i < n; i++) { if (cum[i] > peak) peak = cum[i]; const dd = cum[i] / peak - 1; if (dd < mdd) mdd = dd; }
     let winDays = 0, activeDays = 0;
     for (let i = 0; i < n; i++) { if (r[i] !== 0) { activeDays++; if (r[i] > 0) winDays++; } }
+    // 하방 변동성(손실 난 날만)으로 계산하는 소르티노
+    const down = [];
+    for (let i = 0; i < n; i++) if (r[i] < 0) down.push(r[i]);
+    const dsd = down.length > 2 ? U.std(down, 1) : NaN;
+
     return {
       total: cum[n - 1] - 1,
       cagr: years > 0 ? Math.pow(cum[n - 1], 1 / years) - 1 : NaN,
+      vol: sd * Math.sqrt(M.TRADING_DAYS),
       sharpe: sd > 0 ? (mu / sd) * Math.sqrt(M.TRADING_DAYS) : NaN,
+      sortino: (isFinite(dsd) && dsd > 0) ? (mu / dsd) * Math.sqrt(M.TRADING_DAYS) : NaN,
+      // t값: 평균 수익이 0과 다르다고 볼 수 있는가. |t|>2면 우연으로 보기 어렵습니다.
+      t_stat: sd > 0 ? mu / (sd / Math.sqrt(n)) : NaN,
       mdd: mdd, cum: cum, winRate: activeDays ? winDays / activeDays : NaN,
-      years: years
+      years: years, n: n
     };
   };
 

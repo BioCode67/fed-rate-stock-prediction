@@ -184,5 +184,6 @@
   // 기존 전략 목록에 AI를 붙입니다.
   STRAT.list = STRAT.list.concat(AI_LIST);
   STRAT.aiFeatures = FEATURES;
+  STRAT.featuresAt = featuresAt;      // 팩터 분석 화면에서 그대로 씁니다(캐시 공유)
   STRAT.clearAICache = function () { for (const k in cache) delete cache[k]; };
 })(window.QL = window.QL || {});
