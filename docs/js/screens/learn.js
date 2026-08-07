@@ -9,7 +9,7 @@
   'use strict';
   const U = root.U, App = root.App;
 
-  const S = { tab: 'flow', query: '' };
+  const S = { tab: 'flow', query: '', ideaCat: 'all', ideaQuery: '' };
 
   /* ------------------------------------------------------------------------
    *  1) 퀀트 투자의 흐름
@@ -228,13 +228,213 @@
   ];
 
   /* ------------------------------------------------------------------------
+   *  6) 알파 아이디어 사전
+   *
+   *  "뭘 만들어야 할지 모르겠다"가 학생이 가장 오래 멈춰 있는 지점입니다.
+   *  예제 여덟 개로는 금방 바닥이 나므로, 여기에 출발점을 모아 둡니다.
+   *
+   *  각 항목은 그대로 돌아가는 식입니다. 다만 <b>대부분 통과하지 못합니다.</b>
+   *  그래서 "왜 통할 것 같은가"와 "무엇을 조심해야 하는가"를 같이 적습니다.
+   *  아이디어를 베끼는 곳이 아니라, 아이디어를 <b>고치는 연습</b>을 하는 곳입니다.
+   * ----------------------------------------------------------------------*/
+  const IDEA_CATS = [
+    ['mom',  '모멘텀·추세'],
+    ['rev',  '반전·평균회귀'],
+    ['vol',  '변동성·위험'],
+    ['flow', '거래량·유동성'],
+    ['xs',   '섹터·횡단면 구조'],
+    ['turn', '회전율 다루기']
+  ];
+
+  const IDEAS = [
+    /* --- 모멘텀·추세 ---------------------------------------------------- */
+    { c: 'mom', name: '순수 모멘텀', code: 'rank(mom12_1)',
+      why: '지난 1년(최근 1개월 제외) 많이 오른 종목이 계속 오른다. 학계에서 가장 오래 검증된 이상현상입니다.',
+      watch: '이 데이터(나스닥100·최근 5년)에서는 <b>부호가 반대로 나옵니다.</b> 교과서가 항상 맞지는 않다는 것을 ' +
+        '가장 빨리 배울 수 있는 식입니다. 먼저 그대로 돌려 보고, 왜 반대인지 생각해 보세요.' },
+    { c: 'mom', name: '추세로 확인한 모멘텀', code: 'rank(mom12_1) * rank(trend)',
+      why: '1년 성과도 좋고 50일선이 200일선 위에 있는 종목만 남깁니다. 곱은 "둘 다일 때"만 커지는 AND입니다.',
+      watch: '곱하면 신호가 한쪽으로 몰립니다. 둘 다 0~1이라 결과도 0~1 — 즉 <b>음수가 없어 공매도 쪽이 약해집니다.</b> ' +
+        'zscore로 바꾸거나 중립화를 켜 보세요.' },
+    { c: 'mom', name: '모멘텀 가속', code: 'rank(mom21) - rank(ts_delay(mom21, 21))',
+      why: '이번 달 모멘텀이 지난달보다 강해졌는가. 수준이 아니라 <b>변화</b>를 봅니다. 뒤늦게 따라 사는 것을 줄여 줍니다.',
+      watch: '차분(delta)을 쓰면 신호가 훨씬 자주 바뀝니다. 회전율을 꼭 확인하세요.' },
+    { c: 'mom', name: '52주 신고가 근접', code: 'ts_rank(close, 252)',
+      why: '신고가 근처에는 "본전만 오면 팔겠다"는 물량이 없습니다. 앵커링 편향에서 나오는 고전 아이디어입니다.',
+      watch: '가격 수준 자체를 쓰므로 비싼 종목/싼 종목 편향이 생길 수 있습니다. 섹터 중립을 켜고 비교해 보세요.' },
+    { c: 'mom', name: '조용한 추세', code: 'rank(trend) * (1 - rank(vol120))',
+      why: '추세는 살아 있는데 흔들림은 적은 종목. Sharpe는 수익이 아니라 <b>수익÷변동</b>이므로 분모를 줄이는 쪽이 유리합니다.',
+      watch: '저변동 종목에 쏠리면 섹터가 한쪽으로 몰립니다. 마켓에서 섹터 구성을 확인하세요.' },
+
+    /* --- 반전·평균회귀 -------------------------------------------------- */
+    { c: 'rev', name: '단기 반전', code: '-rank(mom5)',
+      why: '일주일 사이 급등한 종목은 되돌립니다. 유동성 공급의 대가라는 설명이 유력합니다.',
+      watch: '가장 잘 통하지만 <b>회전율이 가장 높습니다.</b> 거래비용을 넣으면 사라지기 쉬워요. decay_linear로 눌러 보세요.' },
+    { c: 'rev', name: '변동성 조정 반전', code: '-zscore(mom5) / (1 + rank(vol20))',
+      why: '반전을 노리되, 원래 잘 흔들리는 종목은 덜 믿습니다. 나눗셈으로 위험에 벌점을 줍니다.',
+      watch: '분모에 항상 1을 더해 0으로 나누는 일을 막았습니다. 나눗셈을 쓸 때 반드시 챙겨야 하는 습관입니다.' },
+    { c: 'rev', name: '추세 안의 눌림목', code: 'rank(-dd) * rank(trend)',
+      why: '장기 추세는 살아 있는데 최근 고점 대비 많이 빠진 종목을 삽니다. "싸게 사되 망한 걸 사지는 않는다".',
+      watch: '떨어지는 칼날과 구분되지 않을 때가 많습니다. 낙폭 기준을 126일이 아니라 더 짧게 보고 싶다면 ' +
+        'ts_max(close, 60)을 직접 써서 만들어 보세요.' },
+    { c: 'rev', name: 'RSI 양극단', code: 'if_else(rsi < 30, 1, 0) - if_else(rsi > 70, 1, 0)',
+      why: '과매도는 사고 과매수는 팝니다. 조건으로 −1/0/+1 세 단계를 만드는 방법을 보여 주는 식입니다.',
+      watch: '대부분의 날에 값이 0이라 <b>종목이 몇 개 안 잡힙니다.</b> 소수 종목에 크게 걸리면 성과가 운에 좌우됩니다. ' +
+        '최대 비중을 낮춰서 확인하세요.' },
+    { c: 'rev', name: '5일 이동평균 회귀', code: '-(close / ts_mean(close, 5) - 1)',
+      why: '5일 평균에서 위로 벌어진 종목을 팔고 아래로 벌어진 종목을 삽니다. 가장 단순한 평균회귀 형태입니다.',
+      watch: '순위를 쓰지 않아 이상치 하나가 비중을 독식할 수 있습니다. rank()나 winsorize()로 감싸 보세요.' },
+
+    /* --- 변동성·위험 ---------------------------------------------------- */
+    { c: 'vol', name: '저변동 이상현상', code: '-rank(vol120)',
+      why: '변동성이 낮은 종목이 위험 대비로 더 법니다. 레버리지를 못 쓰는 투자자가 고베타로 몰리기 때문이라는 설명이 있습니다.',
+      watch: '가장 유명하고 가장 붐비는 아이디어입니다. 그래서 혼자 쓰면 남들과 <b>자기상관이 높게</b> 나옵니다.' },
+    { c: 'vol', name: '변동성 축소', code: 'rank(vol120) - rank(vol20)',
+      why: '평소에는 잘 흔들리는데 최근 한 달은 조용해진 종목. 변동성이 줄어드는 국면에서 수익이 난다는 아이디어입니다.',
+      watch: '두 기간의 차이를 볼 때는 <b>둘 다 순위로 바꾼 뒤</b> 빼세요. 원값끼리 빼면 단위가 큰 종목이 지배합니다.' },
+    { c: 'vol', name: '위험 대비 수익', code: 'rank(mom21 / (vol20 + 0.01))',
+      why: '한 달 수익을 그 기간 변동으로 나눈, 종목별 Sharpe 비슷한 값입니다. 알파 자체가 Sharpe를 닮게 됩니다.',
+      watch: 'vol20이 0에 가까운 종목이 폭발합니다. +0.01이 그 방어막입니다. 이 값을 0.001로 바꿔 보고 무슨 일이 ' +
+        '생기는지 확인해 보세요.' },
+    { c: 'vol', name: '하방 변동성 회피', code: '-rank(ts_std_dev(min(returns, 0), 60))',
+      why: '위로 튀는 변동은 벌점이 아닙니다. min(returns, 0)으로 <b>내려간 날만</b> 골라 그 변동을 봅니다.',
+      watch: '아이디어는 좋은데 전체 변동성과 상관이 매우 높습니다. −rank(vol120)과 자기상관을 비교해 보세요. ' +
+        '0.7을 넘으면 IQC에서는 같은 알파로 봅니다.' },
+
+    /* --- 거래량·유동성 -------------------------------------------------- */
+    { c: 'flow', name: '거래량 급증 회피', code: '-rank(vratio)',
+      why: '거래량이 평소의 몇 배로 터진 날 뒤에는 되돌림이 잦습니다. 뉴스에 과잉 반응한 것을 되받는 구조입니다.',
+      watch: '급증이 좋은 뉴스인지 나쁜 뉴스인지 구분하지 못합니다. mom5와 곱해 방향을 붙여 보세요.' },
+    { c: 'flow', name: '거래량 추세', code: 'rank(ts_mean(log(volume), 20) - ts_mean(log(volume), 120))',
+      why: '최근 한 달 거래가 반년 평균보다 늘었는가. 관심이 붙기 시작한 종목을 잡습니다.',
+      watch: '거래량은 꼬리가 매우 긴 값이라 <b>반드시 log를 씌우고</b> 비교하세요. 로그 없이 빼면 대형주만 남습니다.' },
+    { c: 'flow', name: '가격-거래량 괴리', code: '-ts_corr(rank(close), rank(volume), 20)',
+      why: '오르는데 거래량이 따라오지 않으면 힘이 약합니다. 두 시계열의 상관 자체를 신호로 쓰는 예입니다.',
+      watch: '20일 상관은 표본이 적어 잡음이 많습니다. 60일로 늘리면 안정되지만 반응이 늦어집니다. 둘 다 돌려 비교하세요.' },
+    { c: 'flow', name: '조용한 상승', code: 'rank(mom21) * (1 - rank(vratio))',
+      why: '거래량이 터지지 않은 채 조용히 오른 종목. 아직 사람들이 눈치채지 못한 상승이라는 이야기입니다.',
+      watch: '"조용하다"는 곧 유동성이 적다는 뜻이기도 합니다. 실제 거래에서는 체결이 어려울 수 있습니다.' },
+
+    /* --- 섹터·횡단면 구조 ------------------------------------------------ */
+    { c: 'xs', name: '섹터 중립 모멘텀', code: 'group_neutralize(rank(mom12_1), sector)',
+      why: '반도체가 다 오른 날 반도체를 몰아 사는 것을 막습니다. <b>IQC에서 가장 많이 쓰는 형태</b>입니다.',
+      watch: '섹터 안에서의 상대 순위만 남으므로, 섹터 자체를 고르는 능력은 버립니다. 그게 목적입니다. ' +
+        '다만 <b>종목이 1개뿐인 섹터</b>(에너지·부동산·소재)는 자기 자신이 곧 평균이라 값이 0이 되어 사라집니다. ' +
+        '13개 섹터 중 셋이 그렇습니다. 중립화가 종목을 몇 개나 버리는지 늘 의식하세요.' },
+    { c: 'xs', name: '섹터 안 저변동', code: 'group_rank(-vol120, sector)',
+      why: '섹터마다 변동성 수준이 다릅니다. 유틸리티와 반도체를 같은 자로 재면 안 됩니다. 그룹 안에서만 순위를 매깁니다.',
+      watch: 'group_rank와 group_neutralize는 다릅니다. 순위는 분포를 뭉개고, 중립화는 크기를 남깁니다. 둘 다 돌려 보세요.' },
+    { c: 'xs', name: '섹터 자체의 모멘텀', code: 'rank(mom21) - group_neutralize(rank(mom21), sector)',
+      why: '중립화는 "값 − 그룹평균"입니다. 그러니 <b>값에서 중립화 결과를 빼면 그룹평균만 남습니다.</b> ' +
+        '즉 섹터 전체가 좋은 쪽에 거는 알파가 됩니다. 연산자를 조합해 없는 기능을 만드는 예입니다.',
+      watch: '섹터가 13개뿐이라 사실상 13개 자산에 거는 것과 같습니다. 종목 수가 많다고 분산된 것이 아닙니다.' },
+    { c: 'xs', name: '이상치 다듬기', code: 'winsorize(zscore(mom12_1), 3)',
+      why: 'zscore는 크기 정보를 남기지만 이상치에 약합니다. 표준편차 3배를 넘는 값을 잘라 균형을 잡습니다.',
+      watch: 'rank()는 이상치에 애초에 강합니다. zscore+winsorize와 rank 중 무엇이 더 나은지는 알파마다 다릅니다. 재 보세요.' },
+
+    /* --- 회전율 다루기 --------------------------------------------------- */
+    { c: 'turn', name: '신호 부드럽게', code: 'decay_linear(rank(mom21), 20)',
+      why: '최근 20일 신호를 가중평균합니다. 비중이 하루 만에 뒤집히지 않아 <b>회전율이 크게 떨어집니다.</b> ' +
+        'Fitness를 올리는 가장 표준적인 방법입니다.',
+      watch: '회전율이 12.5% 아래로 내려가면 Fitness 공식의 바닥에 걸려 더 이상 좋아지지 않습니다. ' +
+        'decay를 4 → 20으로 바꿔 가며 어디서 멈추는지 확인하세요.' },
+    { c: 'turn', name: '느린 재료로 바꾸기', code: 'rank(ts_mean(mom5, 20))',
+      why: '빠른 신호(5일 모멘텀)를 20일 평균으로 눌러 느린 신호로 만듭니다. decay와 목적은 같지만 ' +
+        '<b>신호를 만들기 전에</b> 누른다는 점이 다릅니다.',
+      watch: '평균을 내면 정보도 같이 뭉개집니다. 회전율은 떨어지는데 Sharpe도 같이 떨어지면 너무 눌린 것입니다.' },
+    { c: 'turn', name: '분위로 뭉개기', code: 'quantile(rank(mom12_1), 5) - 2',
+      why: '순위 47등과 48등의 차이는 잡음입니다. 5분위로 묶으면 그 잡음이 비중을 흔들지 않습니다. ' +
+        '−2는 가운데를 0으로 옮기는 장치입니다.',
+      watch: '분위 경계를 넘나드는 종목은 오히려 크게 움직입니다. 회전율이 생각만큼 안 떨어질 수 있어요.' },
+    { c: 'turn', name: '극단만 잡기', code: 'if_else(rank(mom12_1) > 0.8, 1, if_else(rank(mom12_1) < 0.2, -1, 0))',
+      why: '상위 20%만 사고 하위 20%만 팝니다. 중간은 건드리지 않습니다. 확신이 있는 곳에만 자본을 씁니다.',
+      watch: '종목 수가 줄어 개별 종목 사고에 취약해집니다. 최대 비중을 함께 낮추세요. ' +
+        'if_else를 겹쳐 쓰는 문법을 익히는 데도 좋은 식입니다.' }
+  ];
+
+  function ideasPanel(host) {
+    const p = App.panel('알파 아이디어 사전 <span class="accent">' + IDEAS.length + '</span>',
+      { sub: '막혔을 때 여기서 출발하세요. 베끼는 곳이 아니라 고치는 연습을 하는 곳입니다' });
+
+    const intro = U.el('div', 'note');
+    intro.innerHTML = '전부 <b>그대로 돌아가는 식</b>입니다. 그리고 대부분 IQC 기준을 통과하지 못합니다. ' +
+      '일부러 그렇게 뒀습니다 — 통과하는 식을 나눠 주면 여러분은 아무것도 배우지 못합니다. ' +
+      '각 항목의 <b>조심할 점</b>이 실제 과제입니다. 거기 적힌 실험을 해 보고, 그 결과를 연구 노트에 남기세요.';
+    p.body.appendChild(intro);
+
+    const seg = U.el('div', 'seg');
+    seg.style.marginBottom = '8px';
+    [['all', '전체']].concat(IDEA_CATS).forEach(function (o) {
+      const b = U.el('button', S.ideaCat === o[0] ? 'on' : '', o[1]);
+      b.addEventListener('click', function () { S.ideaCat = o[0]; draw(host); });
+      seg.appendChild(b);
+    });
+    p.body.appendChild(seg);
+
+    const q = U.el('input');
+    q.type = 'search';
+    q.placeholder = '검색 (예: 반전, 회전율, decay, 섹터)';
+    q.value = S.ideaQuery;
+    q.style.marginBottom = '10px';
+    p.body.appendChild(q);
+
+    const list = U.el('div');
+    p.body.appendChild(list);
+
+    function render() {
+      list.innerHTML = '';
+      const f = S.ideaQuery.trim().toLowerCase();
+      const hit = IDEAS.filter(function (d) {
+        if (S.ideaCat !== 'all' && d.c !== S.ideaCat) return false;
+        if (!f) return true;
+        return (d.name + ' ' + d.code + ' ' + d.why + ' ' + d.watch).toLowerCase().indexOf(f) >= 0;
+      });
+      let lastCat = null;
+      hit.forEach(function (d) {
+        if (S.ideaCat === 'all' && d.c !== lastCat) {
+          lastCat = d.c;
+          const label = (IDEA_CATS.filter(function (c) { return c[0] === d.c; })[0] || ['', ''])[1];
+          const h = U.el('div', 'tiny');
+          h.style.cssText = 'letter-spacing:.1em;margin:14px 0 4px;color:var(--amber)';
+          h.textContent = label;
+          list.appendChild(h);
+        }
+        const box = U.el('div', 'idea');
+        box.innerHTML =
+          '<div class="i-name">' + U.escape(d.name) + '</div>' +
+          '<div class="i-code mono">' + U.escape(d.code) + '</div>' +
+          '<div class="i-why">왜 통할 것 같은가 · ' + d.why + '</div>' +
+          '<div class="i-watch">조심할 점 · ' + d.watch + '</div>';
+        const go = U.el('button', 'btn sm mt', '이 식으로 열기 →');
+        go.addEventListener('click', function () {
+          if (App.screens.alpha && App.screens.alpha.load) App.screens.alpha.load(d.code, d.name);
+          else App.go('alpha');
+        });
+        box.appendChild(go);
+        list.appendChild(box);
+      });
+      if (!hit.length) list.appendChild(U.el('div', 'empty', '해당하는 아이디어가 없습니다.'));
+    }
+    q.addEventListener('input', function () { S.ideaQuery = q.value; render(); });
+    render();
+
+    const tail = U.el('div', 'note warn');
+    tail.innerHTML = '<b>26개를 다 돌려 보고 제일 좋은 것을 고르지 마세요.</b> 그것이 바로 다중검정입니다. ' +
+      '26번 뽑으면 아무 정보가 없어도 하나쯤은 Sharpe 1을 넘습니다. ' +
+      '먼저 <b>말이 되는 이유</b>로 두세 개를 고르고, 그것만 손보세요. 고른 이유를 연구 노트에 먼저 적어 두면 ' +
+      '나중에 자신을 속이기 어려워집니다.';
+    p.body.appendChild(tail);
+    return p;
+  }
+
+  /* ------------------------------------------------------------------------
    *  화면
    * ----------------------------------------------------------------------*/
   function tabs(host) {
     const p = App.panel('배우기 <span class="accent">LEARN</span>',
       { sub: '대회 심사위원이 보는 것은 "얼마나 벌었나"가 아니라 "그 숫자를 믿을 수 있는가"입니다' });
     const seg = U.el('div', 'seg');
-    [['flow', '퀀트의 흐름'], ['traps', '흔한 함정'], ['tasks', '실습 과제'],
+    [['flow', '퀀트의 흐름'], ['ideas', '알파 아이디어'], ['traps', '흔한 함정'], ['tasks', '실습 과제'],
      ['iqc', 'IQC 로드맵'], ['comp', '대회 준비'], ['gloss', '용어집']].forEach(function (o) {
       const b = U.el('button', S.tab === o[0] ? 'on' : '', o[1]);
       b.addEventListener('click', function () { S.tab = o[0]; draw(host); });
@@ -468,6 +668,7 @@
     host.innerHTML = '';
     host.appendChild(tabs(host));
     if (S.tab === 'flow') host.appendChild(flowPanel());
+    else if (S.tab === 'ideas') host.appendChild(ideasPanel(host));
     else if (S.tab === 'traps') host.appendChild(trapsPanel());
     else if (S.tab === 'tasks') host.appendChild(tasksPanel(host));
     else if (S.tab === 'iqc') host.appendChild(iqcPanel(host));

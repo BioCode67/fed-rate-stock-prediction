@@ -38,6 +38,7 @@
     running: false,
     err: null,
     showOps: false,
+    opsQuery: '',
     oos: null,                  // 채점 구간 결과
     oosRunning: false,
     peeks: 0                    // 채점 구간을 몇 번 봤는가
@@ -954,36 +955,58 @@
     });
     p.body.appendChild(fbox);
 
-    if (!S.showOps) {
-      p.body.appendChild(U.el('div', 'tiny', '"펼치기"를 누르면 연산자 ' +
-        Object.keys(EXPR.functions).length + '개의 설명을 볼 수 있습니다.'));
+    const total = Object.keys(EXPR.functions).length;
+    if (!S.showOps && !S.opsQuery) {
+      p.body.appendChild(U.el('div', 'tiny', '"펼치기"를 누르면 연산자 ' + total + '개의 설명을 볼 수 있습니다.'));
       return p;
     }
 
-    const cats = {};
-    Object.keys(EXPR.functions).forEach(function (k) {
-      const f = EXPR.functions[k];
-      (cats[f.cat] = cats[f.cat] || []).push({ key: k, f: f });
-    });
-    [['횡단면', ' — 그날 종목들끼리 비교'], ['시계열', ' — 같은 종목의 과거와 비교'], ['산술', '']]
-      .forEach(function (cc) {
-        const cat = cc[0];
-        if (!cats[cat]) return;
-        const h = U.el('div', 'tiny');
-        h.style.cssText = 'letter-spacing:.1em;text-transform:uppercase;margin:12px 0 4px;color:var(--amber)';
-        h.textContent = cat + cc[1];
-        p.body.appendChild(h);
-        const box = U.el('div', 'ops');
-        cats[cat].forEach(function (o) {
-          const row = U.el('div', 'op-row');
-          const sig = U.el('div', 'op-sig', o.f.sig);
-          sig.addEventListener('click', function () { if (insert) insert(o.key + '('); });
-          row.appendChild(sig);
-          row.appendChild(U.el('div', 'op-desc', o.f.desc));
-          box.appendChild(row);
-        });
-        p.body.appendChild(box);
+    // 25개가 넘어가면 훑는 것보다 찾는 것이 빠릅니다.
+    const q = U.el('input');
+    q.type = 'search';
+    q.placeholder = '연산자 검색 (예: rank, 순위, 평균, 상관)';
+    q.value = S.opsQuery;
+    q.style.margin = '4px 0 8px';
+    p.body.appendChild(q);
+
+    const listBox = U.el('div');
+    p.body.appendChild(listBox);
+
+    function renderList() {
+      listBox.innerHTML = '';
+      const f = S.opsQuery.trim().toLowerCase();
+      const cats = {};
+      let shown = 0;
+      Object.keys(EXPR.functions).forEach(function (k) {
+        const fn = EXPR.functions[k];
+        if (f && (k + ' ' + fn.sig + ' ' + fn.desc).toLowerCase().indexOf(f) < 0) return;
+        (cats[fn.cat] = cats[fn.cat] || []).push({ key: k, f: fn });
+        shown++;
       });
+      [['횡단면', ' — 그날 종목들끼리 비교'], ['시계열', ' — 같은 종목의 과거와 비교'], ['산술', '']]
+        .forEach(function (cc) {
+          const cat = cc[0];
+          if (!cats[cat]) return;
+          const h = U.el('div', 'tiny');
+          h.style.cssText = 'letter-spacing:.1em;text-transform:uppercase;margin:12px 0 4px;color:var(--amber)';
+          h.textContent = cat + cc[1];
+          listBox.appendChild(h);
+          const box = U.el('div', 'ops');
+          cats[cat].forEach(function (o) {
+            const row = U.el('div', 'op-row');
+            const sig = U.el('div', 'op-sig', o.f.sig);
+            sig.addEventListener('click', function () { if (insert) insert(o.key + '('); });
+            row.appendChild(sig);
+            row.appendChild(U.el('div', 'op-desc', o.f.desc));
+            box.appendChild(row);
+          });
+          listBox.appendChild(box);
+        });
+      if (!shown) listBox.appendChild(U.el('div', 'empty', '그런 이름의 연산자가 없습니다.'));
+    }
+
+    q.addEventListener('input', function () { S.opsQuery = q.value; renderList(); });
+    renderList();
     return p;
   }
 
@@ -1092,5 +1115,18 @@
     if (!S.result) host.appendChild(introPanel());
   }
 
-  App.register('alpha', { render: draw });
+  App.register('alpha', {
+    render: draw,
+    // 다른 화면(배우기의 알파 사전 등)에서 식을 들고 넘어올 때 씁니다.
+    load: function (src, name) {
+      S.mode = 'expr';
+      S.src = src;
+      S.name = name || '';
+      S.editing = null;
+      S.result = null;
+      S.oos = null;
+      S.err = null;
+      App.go('alpha');
+    }
+  });
 })(window.QL = window.QL || {});
