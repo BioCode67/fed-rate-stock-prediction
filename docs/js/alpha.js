@@ -68,6 +68,7 @@
 
   // 사람이 읽는 식으로 (발표에서 이 한 줄을 말할 수 있어야 합니다)
   A.formula = function (w) {
+    if (!w || !w.length) return '(비어 있음)';
     const F = STRAT.aiFeatures;
     const parts = [];
     for (let j = 0; j < w.length; j++) {
@@ -88,14 +89,33 @@
       if (list[i].id.indexOf('alpha:') === 0) list.splice(i, 1);
     }
     A.load().forEach(function (a) {
+      let score, desc;
+      if (a.src && root.EXPR) {
+        // 식 모드 알파. 파싱은 한 번만 하고 캐시는 전략마다 따로 둡니다.
+        const chk = root.EXPR.check(a.src);
+        if (!chk.ok) return;                      // 문법이 깨진 알파는 목록에 올리지 않습니다
+        let ctx = root.EXPR.newContext();
+        let seen = 0;
+        score = function (i) {
+          // 백테스트가 여러 번 돌면 캐시가 무한정 커지므로 가끔 비웁니다.
+          if (++seen % 4000 === 0) ctx = root.EXPR.newContext();
+          return root.EXPR.evalAt(chk.ast, i, ctx);
+        };
+        desc = a.src;
+      } else {
+        const w = a.w || [];
+        score = function (i) { return A.scoreWith(w, i); };
+        desc = A.formula(w);
+      }
       list.push({
         id: 'alpha:' + a.id,
         name: a.name,
         cat: '내 알파',
-        desc: A.formula(a.w),
+        desc: desc,
         isAlpha: true,
         weights: a.w,
-        score: function (i) { return A.scoreWith(a.w, i); }
+        src: a.src,
+        score: score
       });
     });
   };

@@ -285,6 +285,99 @@ table.t { display: block; overflow-x: auto; }
 /* 미니 막대(비중·점수 시각화) */
 .bar { height: 4px; background: var(--panel-3); position: relative; min-width: 40px; }
 .bar > i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--amber); }
+
+/* ===========================================================================
+ *  IQC 점수판
+ *
+ *  숫자만 늘어놓으면 학생은 "그래서 통과인가?"를 알 수 없습니다.
+ *  합격선을 눈금으로 그어 두고, 넘었는지 못 넘었는지를 색과 위치로 보여 줍니다.
+ * =========================================================================*/
+.score { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); }
+.gauge {
+  border: 1px solid var(--line); background: var(--panel-2);
+  padding: 10px 12px; position: relative; overflow: hidden;
+}
+.gauge.pass { border-color: #2c6f47; }
+.gauge.fail { border-color: #7a3535; }
+.gauge .g-top { display: flex; align-items: baseline; gap: 8px; }
+.gauge .g-name { font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-3); }
+.gauge .g-need { margin-left: auto; font-size: 10px; font-family: var(--mono); color: var(--ink-3); }
+.gauge .g-val { font-family: var(--mono); font-size: 24px; font-variant-numeric: tabular-nums; margin: 2px 0 6px; }
+.gauge.pass .g-val { color: var(--up); }
+.gauge.fail .g-val { color: var(--down); }
+.gauge .g-track { height: 5px; background: var(--panel-3); position: relative; }
+.gauge .g-fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--flat); }
+.gauge.pass .g-fill { background: var(--up); }
+.gauge.fail .g-fill { background: var(--down); }
+.gauge .g-mark { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--amber); }
+.gauge .g-why { font-size: 10.5px; color: var(--ink-3); margin-top: 7px; line-height: 1.45; }
+.verdict {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 14px; border: 1px solid var(--line-strong); background: var(--panel-2);
+  margin-bottom: 12px;
+}
+.verdict .v-badge {
+  font-family: var(--mono); font-size: 11px; letter-spacing: .12em;
+  padding: 5px 10px; border: 1px solid currentColor; white-space: nowrap;
+}
+.verdict.pass { border-left: 3px solid var(--up); }
+.verdict.pass .v-badge { color: var(--up); }
+.verdict.fail { border-left: 3px solid var(--down); }
+.verdict.fail .v-badge { color: var(--down); }
+.verdict .v-text { font-size: 12.5px; color: var(--ink-2); line-height: 1.55; }
+.verdict .v-text b { color: var(--ink); }
+
+/* 식 편집기 */
+.code {
+  width: 100%; min-height: 88px; resize: vertical;
+  font-family: var(--mono); font-size: 13.5px; line-height: 1.6;
+  background: #0b0d10; color: var(--ink);
+  border: 1px solid var(--line-strong); border-radius: 2px;
+  padding: 10px 12px; tab-size: 2;
+}
+.code:focus { outline: none; border-color: var(--amber); }
+.code.bad { border-color: var(--down); }
+.expr-out {
+  font-family: var(--mono); font-size: 11.5px; padding: 6px 10px;
+  border-left: 2px solid var(--line-strong); color: var(--ink-3); margin-top: 6px;
+}
+.expr-out.bad { border-left-color: var(--down); color: var(--down); }
+.expr-out.ok { border-left-color: var(--up); color: var(--ink-2); }
+
+/* 연산자 사전 */
+.ops { display: grid; gap: 0; }
+.ops .op-row {
+  display: grid; grid-template-columns: 220px 1fr; gap: 12px;
+  padding: 6px 0; border-bottom: 1px solid var(--line); align-items: baseline;
+}
+.ops .op-sig { font-family: var(--mono); font-size: 12px; color: var(--amber); cursor: pointer; }
+.ops .op-sig:hover { text-decoration: underline; }
+.ops .op-desc { font-size: 11.5px; color: var(--ink-2); }
+@media (max-width: 620px) {
+  .ops .op-row { grid-template-columns: 1fr; gap: 2px; }
+}
+
+/* 예제 카드 */
+.recipe {
+  border: 1px solid var(--line); padding: 10px 12px; cursor: pointer;
+  transition: border-color .12s;
+}
+.recipe:hover { border-color: var(--amber); }
+.recipe .r-name { font-weight: 650; font-size: 13px; }
+.recipe .r-code {
+  font-family: var(--mono); font-size: 11.5px; color: var(--amber);
+  margin: 5px 0; overflow-x: auto; white-space: nowrap;
+}
+.recipe .r-why { font-size: 11px; color: var(--ink-3); line-height: 1.5; }
+
+/* 단계 표시(파이프라인) */
+.pipe { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 11px; color: var(--ink-3); }
+.pipe .p-step {
+  font-family: var(--mono); padding: 3px 8px;
+  border: 1px solid var(--line-strong); background: var(--panel-2); color: var(--ink-2);
+}
+.pipe .p-step.on { border-color: var(--amber); color: var(--amber); }
+.pipe .p-arrow { color: var(--line-strong); }
 .bar.pos > i { background: var(--up); }
 .bar.neg > i { background: var(--down); }
 

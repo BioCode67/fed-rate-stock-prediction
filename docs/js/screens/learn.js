@@ -235,7 +235,7 @@
       { sub: '대회 심사위원이 보는 것은 "얼마나 벌었나"가 아니라 "그 숫자를 믿을 수 있는가"입니다' });
     const seg = U.el('div', 'seg');
     [['flow', '퀀트의 흐름'], ['traps', '흔한 함정'], ['tasks', '실습 과제'],
-     ['comp', '대회 준비'], ['gloss', '용어집']].forEach(function (o) {
+     ['iqc', 'IQC 로드맵'], ['comp', '대회 준비'], ['gloss', '용어집']].forEach(function (o) {
       const b = U.el('button', S.tab === o[0] ? 'on' : '', o[1]);
       b.addEventListener('click', function () { S.tab = o[0]; draw(host); });
       seg.appendChild(b);
@@ -330,6 +330,87 @@
     return p;
   }
 
+  /* ------------------------------------------------------------------------
+   *  IQC 로드맵 — 이 사이트에서 대회까지 어떻게 이어지는가
+   * ----------------------------------------------------------------------*/
+  const IQC_STAGES = [
+    { n: 1, title: 'BRAIN 계정 만들기', when: '지금 당장',
+      body: 'platform.worldquantbrain.com 에서 무료로 가입합니다. 대회 기간이 아니어도 ' +
+        '상시 연습이 가능하고, 여기서 쌓은 알파가 그대로 대회 실적이 됩니다. ' +
+        '가입에 학교 이메일이면 충분합니다.',
+      here: '이 사이트의 <b>알파 만들기</b>가 BRAIN 시뮬레이터와 같은 구조입니다. ' +
+        '식 문법도 일부러 같은 이름을 썼습니다(rank, ts_delta, group_neutralize…).' },
+    { n: 2, title: '연산자에 익숙해지기', when: '1~2주',
+      body: '처음에는 rank()와 ts_ 계열 몇 개만 써도 충분합니다. ' +
+        '중요한 것은 연산자를 많이 아는 게 아니라, <b>하나를 바꿨을 때 점수가 어떻게 움직이는지</b>를 ' +
+        '몸으로 아는 것입니다.',
+      here: '<b>예제에서 출발하기</b>의 여덟 개를 그대로 돌려 보고, 숫자를 한 군데씩만 바꿔 보세요. ' +
+        'decay를 4 → 20으로 올리면 회전율과 Fitness가 어떻게 움직이는지 꼭 확인하세요.' },
+    { n: 3, title: '통과 기준 감 잡기', when: '2~4주',
+      body: 'Sharpe 1.25 / Fitness 1.0 / 회전율 1~70%. 처음에는 대부분 못 넘깁니다. ' +
+        '정상입니다. 못 넘기는 알파를 많이 만들어 보는 것이 유일한 길입니다.',
+      here: '채점표의 눈금이 BRAIN의 합격선과 같은 값입니다. ' +
+        '회전율이 걸리면 decay_linear·ts_mean으로 신호를 부드럽게 만드세요. ' +
+        'Fitness는 성과를 올리는 것보다 회전율을 낮추는 편이 빠를 때가 많습니다.' },
+    { n: 4, title: '서로 다른 알파를 여러 개', when: '1~3개월',
+      body: 'IQC는 알파 하나로 겨루지 않습니다. 여러 개를 내되 <b>서로 닮으면 안 됩니다</b>. ' +
+        '자기상관 0.7을 넘으면 같은 알파를 두 번 낸 것으로 봅니다.',
+      here: '알파를 저장하면 일별 손익도 함께 남습니다. 다음 알파를 시뮬레이션할 때 ' +
+        '<b>자기상관</b>이 자동으로 계산돼 나옵니다. 0.7 미만인 알파를 5개 모으는 것을 목표로 하세요.' },
+    { n: 5, title: '팀 만들기', when: '접수 1개월 전',
+      body: '1~4인 팀입니다. 혼자보다 팀이 유리합니다. 서로 다른 아이디어를 내야 ' +
+        '자기상관이 낮은 알파 묶음이 나오기 때문입니다.',
+      here: '반 내부 대회 순위표에서 격차가 작은 사람을 찾으세요. ' +
+        '개발 구간에서 1등인 사람보다, <b>개발과 채점 성적이 비슷한</b> 사람이 좋은 팀원입니다.' },
+    { n: 6, title: '지원서 쓰기', when: '3월경 접수',
+      body: '"무엇을 시도했고, 무엇이 안 됐고, 왜 그렇게 판단했는가"를 씁니다. ' +
+        '성과만 나열한 지원서는 약합니다.',
+      here: '<b>연구 노트</b>를 .md로 내려받아 그대로 붙이세요. 시도 횟수와 실패한 시도까지 ' +
+        '들어 있는 기록이 가장 강한 근거입니다.' }
+  ];
+
+  function iqcPanel(host) {
+    const p = App.panel('IQC 로드맵 <span class="accent">WORLDQUANT</span>',
+      { sub: '이 사이트에서 실제 대회까지 어떻게 이어지는가' });
+
+    const intro = U.el('div', 'note');
+    intro.innerHTML = '<b>International Quant Championship</b>은 WorldQuant가 매년 여는 대학생 퀀트 대회입니다. ' +
+      '총상금 US$100,000, 싱가포르 결승, 채용 우대. 참가자는 BRAIN 플랫폼에서 <b>알파(식 한 줄)</b>를 만들어 냅니다. ' +
+      '이 사이트의 알파 만들기 화면은 그 과정을 축소해 옮긴 것입니다.';
+    p.body.appendChild(intro);
+
+    IQC_STAGES.forEach(function (st) {
+      const box = U.el('div');
+      box.style.cssText = 'display:grid;grid-template-columns:34px 1fr;gap:12px;padding:12px 0;' +
+        'border-bottom:1px solid var(--line)';
+      const num = U.el('div', 'mono');
+      num.style.cssText = 'width:30px;height:30px;display:grid;place-items:center;font-size:13px;' +
+        'border:1px solid var(--amber);color:var(--amber)';
+      num.textContent = String(st.n);
+      const txt = U.el('div');
+      txt.innerHTML = '<div style="font-weight:650">' + U.escape(st.title) +
+        ' <span class="tiny" style="font-weight:400">· ' + U.escape(st.when) + '</span></div>' +
+        '<div class="small" style="margin-top:4px">' + st.body + '</div>' +
+        '<div class="tiny" style="margin-top:6px;padding-left:9px;border-left:2px solid var(--amber-dim)">' +
+        '여기서 연습: ' + st.here + '</div>';
+      box.appendChild(num); box.appendChild(txt);
+      p.body.appendChild(box);
+    });
+
+    const go = U.el('button', 'btn primary mt', '알파 만들기 열기 →');
+    go.addEventListener('click', function () { App.go('alpha'); });
+    p.body.appendChild(go);
+
+    const caveat = U.el('div', 'note warn');
+    caveat.innerHTML = '<b>다른 점도 알아 두세요.</b> BRAIN은 전 세계 수천 종목(TOP3000 등)과 ' +
+      '재무·뉴스·애널리스트 데이터를 씁니다. 여기는 나스닥100 약 100종목과 가격·거래량뿐입니다. ' +
+      '연산자와 채점 방식은 같지만 <b>데이터의 폭이 다릅니다.</b> ' +
+      '여기서 통한 알파가 거기서도 통한다는 보장은 없습니다. 반대로 여기서 못 넘긴 기준을 ' +
+      '거기서는 넘길 수도 있습니다. 이 화면은 <b>감을 잡는 곳</b>이지 대체품이 아닙니다.';
+    p.body.appendChild(caveat);
+    return p;
+  }
+
   function compPanel() {
     const p = App.panel('나가 볼 만한 대회', { sub: '일정은 해마다 바뀌므로 공식 페이지에서 다시 확인하세요' });
     COMPETITIONS.forEach(function (c) {
@@ -386,6 +467,7 @@
     if (S.tab === 'flow') host.appendChild(flowPanel());
     else if (S.tab === 'traps') host.appendChild(trapsPanel());
     else if (S.tab === 'tasks') host.appendChild(tasksPanel(host));
+    else if (S.tab === 'iqc') host.appendChild(iqcPanel(host));
     else if (S.tab === 'comp') host.appendChild(compPanel());
     else host.appendChild(glossPanel(host));
   }
