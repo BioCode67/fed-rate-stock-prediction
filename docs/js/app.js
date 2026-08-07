@@ -19,6 +19,7 @@
     main.scrollTop = 0;
     try {
       App.screens[id].render(main);
+      App.stepHint(main, id);
     } catch (e) {
       main.innerHTML = '<div class="panel"><div class="panel-body"><div class="note bad">' +
         '화면을 그리는 중 문제가 생겼습니다: ' + U.escape(e.message) + '</div></div></div>';
@@ -105,6 +106,44 @@
   };
 
   /* ------------------------------------------------------------------------
+   *  커리큘럼 안내
+   *  "화면 열기"로 넘어온 학생이 무엇을 하러 왔는지 잊지 않도록,
+   *  지금 단계가 이 화면을 가리키면 맨 위에 할 일을 띄웁니다.
+   * ----------------------------------------------------------------------*/
+  App.stepHint = function (main, screenId) {
+    const CURR = root.CURR;
+    if (!CURR || screenId === 'home') return;
+    const step = CURR.next();
+    if (!step || step.screen !== screenId) return;
+
+    const idx = CURR.indexOf(step.id);
+    const box = U.el('div', 'panel');
+    box.style.borderColor = 'var(--amber-dim)';
+    const head = U.el('div', 'panel-head');
+    head.style.background = 'var(--amber-dim)';
+    const t = U.el('div', 'panel-title');
+    t.innerHTML = 'STEP ' + (idx + 1) + ' <span class="accent">' + U.escape(step.title) + '</span>';
+    head.appendChild(t);
+    const actions = U.el('div', 'panel-actions');
+    const doneBtn = U.el('button', 'btn sm', '완료했어요');
+    doneBtn.addEventListener('click', function () {
+      CURR.setDone(step.id, true);
+      App.go(screenId);
+    });
+    const homeBtn = U.el('button', 'btn sm', '시작하기로');
+    homeBtn.addEventListener('click', function () { App.go('home'); });
+    actions.appendChild(doneBtn);
+    actions.appendChild(homeBtn);
+    head.appendChild(actions);
+    box.appendChild(head);
+    const body = U.el('div', 'panel-body');
+    body.innerHTML = '<div class="small"><b>해 볼 것</b> · ' + step.do + '</div>' +
+      '<div class="tiny" style="margin-top:5px">확인 질문 — ' + U.escape(step.check) + '</div>';
+    box.appendChild(body);
+    main.insertBefore(box, main.firstChild);
+  };
+
+  /* ------------------------------------------------------------------------
    *  상태바
    * ----------------------------------------------------------------------*/
   App.setStatus = function () {
@@ -136,20 +175,20 @@
     $$('.nav-item').forEach(function (b) {
       b.addEventListener('click', function () { App.go(b.dataset.screen); });
     });
-    // 숫자키 단축키 (터미널답게)
+    // 숫자키 단축키 (터미널답게). 0 = 시작하기, 1~7 = 각 화면
     document.addEventListener('keydown', function (e) {
       if (e.target.matches('input, select, textarea')) return;
       const items = $$('.nav-item');
       const n = parseInt(e.key, 10);
-      if (n >= 1 && n <= items.length) App.go(items[n - 1].dataset.screen);
+      if (!isNaN(n) && n >= 0 && n < items.length) App.go(items[n].dataset.screen);
     });
 
     const boot = $('#boot');
     DATA.loadFast().then(function () {
       boot.classList.add('hidden');
       App.setStatus();
-      const first = (location.hash || '').replace('#', '') || 'market';
-      App.go(App.screens[first] ? first : 'market');
+      const first = (location.hash || '').replace('#', '') || 'home';
+      App.go(App.screens[first] ? first : 'home');
       // 전체 기간은 뒤에서 조용히
       DATA.loadFull().then(function () {
         App.setStatus();
