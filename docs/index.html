@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>QUANT LAB — 나스닥 퀀트 모의투자</title>
+<meta name="description" content="실제 나스닥100 데이터로 퀀트 기법과 AI 모델을 시험하고 모의투자를 해 보는 교육용 터미널. 영남대 SW중심대학사업단 AI·SW 러닝메이트.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' fill='%230e1013'/><text x='16' y='23' font-size='18' font-family='monospace' fill='%23e0a33e' text-anchor='middle'>Q</text></svg>">
+<link rel="stylesheet" href="css/terminal.css">
+</head>
+<body>
+
+<div class="app">
+  <div class="brand-cell">
+    <div class="brand-mark">Q</div>
+    <div class="brand-name">QUANT LAB
+      <small>나스닥 모의투자 · 영남대 AI·SW 멘토링</small>
+    </div>
+  </div>
+
+  <div class="topbar" id="topbar">
+    <span class="tiny">실제 나스닥100 데이터로 퀀트 기법과 AI 모델을 시험해 보는 교육용 터미널입니다.</span>
+  </div>
+
+  <nav class="rail">
+    <div class="nav-group">
+      <div class="nav-label">시장</div>
+      <button class="nav-item" data-screen="market">마켓<span class="key">1</span></button>
+    </div>
+    <div class="nav-group">
+      <div class="nav-label">투자</div>
+      <button class="nav-item" data-screen="trade">모의투자<span class="key">2</span></button>
+    </div>
+  </nav>
+
+  <main class="main" id="main">
+    <div id="boot" style="padding:40px 4px">
+      <span class="spinner"></span>
+      <span class="small" style="margin-left:8px">시장 데이터를 불러오는 중…</span>
+    </div>
+  </main>
+
+  <div class="statusbar" id="statusbar"></div>
+</div>
+
+<script src="js/core/util.js"></script>
+<script src="js/core/metrics.js"></script>
+<script src="js/core/charts.js"></script>
+<script src="js/core/ml.js"></script>
+<script src="js/data.js"></script>
+<script src="js/app.js"></script>
+<script src="js/screens/market.js"></script>
+<script src="js/screens/trade.js"></script>
+<script>QL.App.boot();</script>
+</body>
+</html>
