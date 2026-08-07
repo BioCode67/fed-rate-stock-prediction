@@ -224,9 +224,88 @@
     return p;
   }
 
+  /* ------------------------------------------------------------------------
+   *  섹터별 요약
+   *
+   *  "나스닥이 올랐다"는 말이 얼마나 거친 요약인지 보여 주는 자리입니다.
+   *  같은 지수 안에서도 섹터마다 다르고, 애초에 나스닥100은 섹터가 고르게
+   *  섞여 있지도 않습니다. 그 편중을 숫자로 보여 줍니다.
+   * ----------------------------------------------------------------------*/
+  function sectorPanel() {
+    const list = DATA.tradables();
+    if (!list.length) return null;
+
+    const by = {};
+    list.forEach(function (t) {
+      const s = DATA.sector(t) || '기타';
+      const g = by[s] || (by[s] = { n: 0, d1: [], m1: [], y1: [], up: 0, dn: 0 });
+      g.n++;
+      const c1 = DATA.change(t, 1), c21 = DATA.change(t, 21), c252 = DATA.change(t, 252);
+      if (isFinite(c1)) { g.d1.push(c1); if (c1 > 0) g.up++; else if (c1 < 0) g.dn++; }
+      if (isFinite(c21)) g.m1.push(c21);
+      if (isFinite(c252)) g.y1.push(c252);
+    });
+
+    const avg = function (a) { return a.length ? a.reduce(function (x, y) { return x + y; }, 0) / a.length : NaN; };
+    const rows = Object.keys(by).map(function (s) {
+      const g = by[s];
+      return { s: s, n: g.n, d1: avg(g.d1), m1: avg(g.m1), y1: avg(g.y1),
+               breadth: (g.up + g.dn) ? g.up / (g.up + g.dn) : NaN };
+    }).sort(function (a, b) { return b.y1 - a.y1; });
+
+    const p = App.panel('섹터별 <span class="accent">성과</span>',
+      { sub: '지수는 평균일 뿐입니다. 안에서 무슨 일이 있었는지 봅니다' });
+
+    const cv = U.el('canvas', 'chart');
+    p.body.appendChild(cv);
+    C.bars(cv, {
+      items: rows.map(function (r) {
+        return { label: r.s + ' (' + r.n + ')', value: isFinite(r.y1) ? r.y1 : 0,
+                 color: (r.y1 || 0) >= 0 ? C.seriesColor(2) : C.seriesColor(7) };
+      }),
+      baseValue: 0, padL: 110,
+      vFmt: function (v) { return (v >= 0 ? '+' : '') + (v * 100).toFixed(1) + '%'; }
+    });
+    const cap = U.el('div', 'tiny');
+    cap.innerHTML = '섹터 안 종목들의 1년 수익률 <b>단순 평균</b>입니다(시가총액 가중 아님). 괄호 안은 종목 수. ' +
+      '종목이 2개 이하인 섹터는 평균이라 부르기 어렵습니다 — 사실상 그 한 종목의 이야기입니다.';
+    p.body.appendChild(cap);
+
+    p.body.appendChild(App.table(
+      ['섹터', { label: '종목', num: true }, { label: '1일', num: true }, { label: '1개월', num: true },
+       { label: '1년', num: true }, { label: '오늘 오른 비율', num: true }],
+      rows.map(function (r) {
+        return { cells: [r.s, r.n, App.chg(r.d1), App.chg(r.m1, 1), App.chg(r.y1, 1),
+          isFinite(r.breadth) ? (r.breadth * 100).toFixed(0) + '%' : '—'] };
+      })));
+
+    // 섹터 편중 — 나스닥100은 고르게 분산된 지수가 아닙니다
+    const top = rows.slice().sort(function (a, b) { return b.n - a.n; }).slice(0, 3);
+    const share = top.reduce(function (a, r) { return a + r.n; }, 0) / list.length;
+    // 1~2종목짜리 섹터는 '섹터 성과'가 아니라 그 종목의 성과입니다. 최고·최저에서 뺍니다.
+    const solid = rows.filter(function (r) { return r.n >= 3 && isFinite(r.y1); });
+    if (!solid.length) return p;
+    const best = solid[0], worst = solid[solid.length - 1];
+    const note = U.el('div', 'note ' + (share > 0.5 ? 'warn' : ''));
+    note.innerHTML =
+      '지난 1년, 가장 좋았던 섹터는 <b>' + U.escape(best.s) + '</b>(' +
+      (best.y1 * 100).toFixed(1) + '%), 가장 나빴던 섹터는 <b>' + U.escape(worst.s) + '</b>(' +
+      (worst.y1 * 100).toFixed(1) + '%)였습니다. 차이가 ' +
+      ((best.y1 - worst.y1) * 100).toFixed(0) + '%p입니다(종목 3개 이상인 섹터끼리).<br><br>' +
+      '그리고 나스닥100은 고르게 섞인 지수가 아닙니다. 상위 3개 섹터(' +
+      top.map(function (r) { return U.escape(r.s); }).join('·') + ')가 종목 수의 <b>' +
+      (share * 100).toFixed(0) + '%</b>를 차지합니다. ' +
+      '"지수를 사면 분산된다"는 말이 어디까지 맞는지 여기서 판단해 보세요. ' +
+      '나중에 모의투자에서 10종목을 담아도 전부 한 섹터인 경우를 보게 되는데, 그 뿌리가 여기 있습니다.';
+    p.body.appendChild(note);
+    return p;
+  }
+
   function draw(host) {
     host.innerHTML = '';
     host.appendChild(marketStrip());
+    const sp = sectorPanel();
+    if (sp) host.appendChild(sp);
 
     const p = App.panel('나스닥100 <span class="accent">종목</span>',
       { sub: '열 제목을 눌러 정렬 · 행을 눌러 아래에서 자세히', tight: true });
