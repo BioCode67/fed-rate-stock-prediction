@@ -196,7 +196,10 @@
     DATA.loadFast().then(function () {
       boot.classList.add('hidden');
       App.setStatus();
-      const first = (location.hash || '').replace('#', '') || 'home';
+      // 주소 뒤에 값이 붙어 올 수 있습니다(예: #alpha!<식>!<설정>).
+      // 느낌표 앞부분만 화면 이름으로 씁니다.
+      const raw = (location.hash || '').replace('#', '');
+      const first = raw.split('!')[0] || 'home';
       App.go(App.screens[first] ? first : 'home');
       // 전체 기간은 뒤에서 조용히
       DATA.loadFull().then(function () {

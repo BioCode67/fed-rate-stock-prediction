@@ -45,6 +45,54 @@
 
   try { S.peeks = +(localStorage.getItem('quantlab.osPeeks') || 0); } catch (e) {}
 
+  /* ------------------------------------------------------------------------
+   *  링크로 식 주고받기
+   *
+   *  수업에서 "다들 이 식을 열어 보세요" 한마디로 끝나게 하려는 장치입니다.
+   *  식은 주소 뒤에 붙어 다니므로 서버가 필요 없습니다.
+   *  (한글 설명이 섞여도 깨지지 않게 UTF-8 → base64 로 감쌉니다)
+   * ----------------------------------------------------------------------*/
+  function encodeExpr(src) {
+    try {
+      const bytes = new TextEncoder().encode(src);
+      let bin = '';
+      bytes.forEach(function (b) { bin += String.fromCharCode(b); });
+      return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    } catch (e) { return ''; }
+  }
+  function decodeExpr(t) {
+    try {
+      const b64 = t.replace(/-/g, '+').replace(/_/g, '/');
+      const bin = atob(b64 + '==='.slice((b64.length + 3) % 4));
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      return new TextDecoder().decode(bytes);
+    } catch (e) { return null; }
+  }
+  function shareUrl() {
+    const base = location.origin + location.pathname;
+    return base + '#alpha!' + encodeExpr(S.src.trim()) +
+      '!' + S.neutralize + '-' + S.decay + '-' + S.maxWeight + '-' + S.years;
+  }
+  // 주소에 식이 들어 있으면 그것으로 시작합니다: #alpha!<식>!<설정>
+  (function () {
+    const h = (location.hash || '').replace('#', '');
+    if (h.indexOf('alpha!') !== 0) return;
+    const parts = h.split('!');
+    const src = decodeExpr(parts[1] || '');
+    if (!src) return;
+    S.src = src;
+    S.mode = 'expr';
+    S.name = '링크로 받은 알파';
+    if (parts[2]) {
+      const c = parts[2].split('-');
+      if (c[0]) S.neutralize = c[0];
+      if (c[1]) S.decay = +c[1] || S.decay;
+      if (c[2]) S.maxWeight = +c[2] || S.maxWeight;
+      if (c[3]) S.years = +c[3] || S.years;
+    }
+  })();
+
   function nf() { return STRAT.aiFeatures.length; }
   function blank() { return new Array(nf()).fill(0); }
   function ensure() { if (!S.w) S.w = blank(); }
@@ -303,6 +351,28 @@
     btn.disabled = S.running;
     btn.addEventListener('click', function () { run(host); });
     cfg.appendChild(btn);
+
+    if (S.mode === 'expr') {
+      const share = U.el('button', 'btn', '링크 복사');
+      share.title = '이 식과 설정이 담긴 주소를 복사합니다. 수업에서 그대로 나눠 주세요.';
+      share.addEventListener('click', function () {
+        const url = shareUrl();
+        const done = function () {
+          share.textContent = '복사됨';
+          setTimeout(function () { if (share.isConnected) share.textContent = '링크 복사'; }, 1600);
+        };
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(url).then(done, function () {});
+        } else {
+          const ta = U.el('textarea');
+          ta.value = url;
+          document.body.appendChild(ta); ta.select();
+          try { document.execCommand('copy'); done(); } catch (e) {}
+          ta.remove();
+        }
+      });
+      cfg.appendChild(share);
+    }
     p.body.appendChild(cfg);
 
     if (S.running) {

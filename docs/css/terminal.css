@@ -228,7 +228,16 @@ body {
 }
 .panel-title .accent { color: var(--amber); }
 .panel-sub { font-size: 11px; color: var(--ink-3); }
-.panel-actions { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+.panel-actions { margin-left: auto; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+/* 좁은 화면에서는 제목과 버튼이 서로를 밀어 글자가 세로로 쪼개집니다.
+   줄을 나눠 제목은 제목대로, 버튼은 아래 한 줄로 놓습니다. */
+@media (max-width: 620px) {
+  .panel-head { flex-wrap: wrap; }
+  .panel-title, .panel-sub { flex: 1 1 100%; }
+  .panel-actions { margin-left: 0; flex: 1 1 100%; }
+  .panel-actions .seg { flex: 1; }
+  .panel-actions .seg button { flex: 1; padding: 5px 6px; font-size: 11.5px; }
+}
 .panel-body { padding: 12px; }
 .panel-body.tight { padding: 0; }
 
