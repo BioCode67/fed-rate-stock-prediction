@@ -705,5 +705,15 @@
     }
   }
 
-  App.register('strategy', { render: draw });
+  // 알파 만들기 화면에서 "백테스트 →"로 넘어올 때, 그 알파만 켜고 기준선을 함께 켭니다.
+  App.register('strategy', {
+    render: draw,
+    select: function (id) {
+      S.selected = {};
+      S.selected[id] = 1;
+      S.selected.equal = 1;
+      S.selected.momentum = 1;
+      S.results = null;
+    }
+  });
 })(window.QL = window.QL || {});

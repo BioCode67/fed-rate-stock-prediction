@@ -95,13 +95,15 @@
     const runs = list.filter(function (e) { return e.kind === 'backtest'; });
     const subs = list.filter(function (e) { return e.kind === 'submit'; });
     const facs = list.filter(function (e) { return e.kind === 'factor'; });
+    const alps = list.filter(function (e) { return e.kind === 'alpha'; });
 
     const out = [];
     out.push('# 퀀트 연구 노트');
     out.push('');
     if (who) out.push('- 작성자: ' + who);
     out.push('- 내보낸 시각: ' + new Date().toLocaleString('ko-KR'));
-    out.push('- 백테스트 ' + runs.length + '회 · 제출 ' + subs.length + '회 · 팩터 분석 ' + facs.length + '회');
+    out.push('- 백테스트 ' + runs.length + '회 · 알파 평가 ' + alps.length + '회 · 제출 ' +
+      subs.length + '회 · 팩터 분석 ' + facs.length + '회');
     out.push('');
     out.push('> 시도 횟수를 밝히는 것은 결과를 깎아내리는 일이 아니라, 결과를 해석 가능하게 만드는 일입니다.');
     out.push('');
@@ -132,6 +134,19 @@
           ' | ' + (e.hypothesis || '—').replace(/\|/g, '/') +
           ' | ' + cfg + ' | ' + (best.name || '—') + ' | ' + num(best.sharpe) +
           ' | ' + pct(best.cagr) + ' | ' + pct(best.cagr - ((e.bench && e.bench.cagr) || 0)) + ' |');
+      });
+      out.push('');
+    }
+
+    if (alps.length) {
+      out.push('## 알파 평가 기록');
+      out.push('');
+      out.push('| # | 시각 | 알파 | 식 | IC | t값 | 기존 팩터 최대상관 |');
+      out.push('|---|---|---|---|---|---|---|');
+      alps.slice().reverse().forEach(function (e, i) {
+        out.push('| ' + (i + 1) + ' | ' + new Date(e.ts).toLocaleDateString('ko-KR') +
+          ' | ' + (e.name || '—') + ' | `' + (e.formula || '') + '` | ' + num(e.ic, 4) +
+          ' | ' + num(e.t) + ' | ' + num(e.maxCorr) + ' |');
       });
       out.push('');
     }

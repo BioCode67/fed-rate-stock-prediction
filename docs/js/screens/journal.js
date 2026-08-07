@@ -14,7 +14,8 @@
   const KIND = {
     backtest: { label: '백테스트', cls: 'tag' },
     submit: { label: '제출', cls: 'tag ok' },
-    factor: { label: '팩터 분석', cls: 'tag demo' }
+    factor: { label: '팩터 분석', cls: 'tag demo' },
+    alpha: { label: '알파 평가', cls: 'tag demo' }
   };
 
   function when(ts) {
@@ -29,12 +30,13 @@
   function summaryPanel() {
     const all = J.all();
     const p = App.panel('연구 노트 <span class="accent">RESEARCH LOG</span>',
-      { sub: '백테스트·제출·팩터 분석이 자동으로 기록됩니다. 이 브라우저에만 저장됩니다' });
+      { sub: '백테스트·알파 평가·제출·팩터 분석이 자동으로 기록됩니다. 이 브라우저에만 저장됩니다' });
 
     const g = U.el('div', 'grid g4');
     g.appendChild(App.stat('백테스트', String(J.count('backtest')) + '회', '개발 구간 실행'));
     g.appendChild(App.stat('제출', String(J.count('submit')) + '회', '채점 구간 평가'));
-    g.appendChild(App.stat('팩터 분석', String(J.count('factor')) + '회', 'IC 검증'));
+    g.appendChild(App.stat('알파 평가', String(J.count('alpha')) + '회',
+      '팩터 분석 ' + J.count('factor') + '회'));
     const first = all.length ? all[all.length - 1].ts : null;
     g.appendChild(App.stat('시작한 날', first ? new Date(first).toLocaleDateString('ko-KR') : '—',
       all.length ? '기록 ' + all.length + '건' : '아직 기록 없음'));
@@ -42,7 +44,7 @@
 
     if (!all.length) {
       p.body.appendChild(U.el('div', 'note',
-        '아직 기록이 없습니다. 전략 실험실에서 백테스트를 한 번 돌리면 여기에 자동으로 남습니다. ' +
+        '아직 기록이 없습니다. 알파 만들기나 전략 실험실에서 한 번 실행하면 여기에 자동으로 남습니다. ' +
         '실무 리서처는 실패한 시도까지 전부 적습니다. 몇 번째 시도인지 모르면 결과를 해석할 수 없기 때문입니다.'));
     }
     return p;
@@ -121,6 +123,20 @@
         '개발 구간 ' + (isFinite(e.dev.sharpe) ? e.dev.sharpe.toFixed(2) : '—')));
       g.appendChild(App.stat('그때까지 시도', (e.runCount || 0) + '회', '백테스트 실행 누적'));
       box.appendChild(g);
+    } else if (e.kind === 'alpha') {
+      box.appendChild(U.el('div', 'mono small', e.formula || ''));
+      const g = U.el('div', 'grid g4');
+      g.style.marginTop = '8px';
+      g.appendChild(App.stat('IC', isFinite(e.ic) ? e.ic.toFixed(4) : '—',
+        '시계 ' + e.horizon + '일', e.ic > 0.02 ? 'up' : (e.ic < -0.02 ? 'down' : '')));
+      g.appendChild(App.stat('t값', isFinite(e.t) ? e.t.toFixed(2) : '—',
+        Math.abs(e.t) > 2 ? '우연으로 보기 어려움' : '우연일 수 있음'));
+      g.appendChild(App.stat('상·하위 격차',
+        isFinite(e.spread) ? ((e.spread >= 0 ? '+' : '') + (e.spread * 100).toFixed(2) + '%') : '—', ''));
+      g.appendChild(App.stat('기존 팩터 최대상관',
+        isFinite(e.maxCorr) ? e.maxCorr.toFixed(2) : '—',
+        e.maxCorr >= 0.9 ? '사실상 같은 팩터' : '독립적', e.maxCorr >= 0.9 ? 'down' : 'up'));
+      box.appendChild(g);
     } else if (e.kind === 'factor' && e.top) {
       const rows = e.top.map(function (t) {
         return { cells: [t.name, t.ic.toFixed(4), isFinite(t.t) ? t.t.toFixed(2) : '—',
@@ -154,7 +170,8 @@
 
     const p = App.panel('기록', { sub: '줄을 누르면 자세히 볼 수 있습니다' });
 
-    [['all', '전체'], ['backtest', '백테스트'], ['submit', '제출'], ['factor', '팩터']].forEach(function (o) {
+    [['all', '전체'], ['backtest', '백테스트'], ['submit', '제출'],
+     ['alpha', '알파'], ['factor', '팩터']].forEach(function (o) {
       const b = U.el('button', 'btn sm' + (S.filter === o[0] ? ' primary' : ''), o[1]);
       b.addEventListener('click', function () { S.filter = o[0]; draw(host); });
       p.actions.appendChild(b);
@@ -200,6 +217,11 @@
       return e.strategyName + ' 제출 · 채점 구간 ' +
         (e.oos.total >= 0 ? '+' : '') + (e.oos.total * 100).toFixed(1) + '% (QQQ 대비 ' +
         (e.excess >= 0 ? '+' : '') + (e.excess * 100).toFixed(1) + '%p)';
+    }
+    if (e.kind === 'alpha') {
+      return (e.name || '알파') + ' · IC ' + (isFinite(e.ic) ? e.ic.toFixed(4) : '—') +
+        ' t ' + (isFinite(e.t) ? e.t.toFixed(2) : '—') +
+        ' · 최대상관 ' + (isFinite(e.maxCorr) ? e.maxCorr.toFixed(2) : '—');
     }
     if (e.kind === 'factor') {
       const t = (e.top && e.top[0]) || {};
