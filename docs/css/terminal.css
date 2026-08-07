@@ -102,7 +102,7 @@ body {
 /* 그리드 자식은 기본값이 min-width:auto 라서 내용보다 좁아지지 못합니다.
    그대로 두면 긴 표·긴 숫자가 화면 밖으로 화면 전체를 밀어냅니다(모바일 가로 스크롤).
    min-width:0 을 주면 자식이 줄어들고, 넘치는 내용은 각자의 스크롤 영역 안에서 처리됩니다. */
-.app > *, .grid > *, .panel, .panel-body, .main > * { min-width: 0; }
+.app > *, .grid > *, .panel, .panel-body, .main > *, #screen > * { min-width: 0; }
 
 .brand-cell {
   grid-area: brand;

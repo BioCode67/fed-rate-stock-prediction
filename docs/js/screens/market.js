@@ -355,6 +355,6 @@
 
   App.register('market', {
     render: function (host) { draw(host); },
-    onFullData: function () { if (App.screen === 'market') draw(root.U.$('#main')); }
+    onFullData: function () { if (App.screen === 'market') draw(App.host()); }
   });
 })(window.QL = window.QL || {});

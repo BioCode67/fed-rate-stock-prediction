@@ -353,7 +353,7 @@
     const row = U.el('div', 'row center mt');
     [[1, '+1일'], [5, '+1주'], [21, '+1개월'], [63, '+3개월']].forEach(function (o) {
       const b = U.el('button', 'btn', o[1]);
-      b.addEventListener('click', function () { advance(o[0]); draw(U.$('#main')); });
+      b.addEventListener('click', function () { advance(o[0]); draw(App.host()); });
       row.appendChild(b);
     });
     const left = DATA.state.dates.length - 1 - acc.t;
@@ -363,7 +363,7 @@
     reset.style.marginLeft = 'auto';
     reset.addEventListener('click', function () {
       if (confirm('지금까지의 거래 기록이 모두 지워집니다. 계속할까요?')) {
-        localStorage.removeItem(KEY); acc = null; draw(U.$('#main'));
+        localStorage.removeItem(KEY); acc = null; draw(App.host());
       }
     });
     row.appendChild(reset);

@@ -50,7 +50,10 @@
     title.textContent = step.title;
     p.body.appendChild(title);
 
-    p.body.appendChild(U.el('div', 'small', step.why));
+    // why/do 는 우리가 쓴 문장이라 강조 태그를 그대로 살립니다.
+    const why = U.el('div', 'small');
+    why.innerHTML = step.why;
+    p.body.appendChild(why);
 
     const doBox = U.el('div', 'note');
     doBox.innerHTML = '<b>해 볼 것</b><br>' + step.do;
@@ -244,5 +247,5 @@
     host.appendChild(mapPanel());
   }
 
-  App.register('home', { render: draw, onFullData: function () { if (App.screen === 'home') draw(U.$('#main')); } });
+  App.register('home', { render: draw, onFullData: function () { if (App.screen === 'home') draw(App.host()); } });
 })(window.QL = window.QL || {});

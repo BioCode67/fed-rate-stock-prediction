@@ -218,7 +218,7 @@
       if (o[0] === S.holdoutMonths) e.selected = true;
       sel.appendChild(e);
     });
-    sel.addEventListener('change', function () { S.holdoutMonths = +sel.value; S.results = null; draw(U.$('#main')); });
+    sel.addEventListener('change', function () { S.holdoutMonths = +sel.value; S.results = null; draw(App.host()); });
     sel.style.marginTop = '4px';
     f.appendChild(sel);
     g.appendChild(f);

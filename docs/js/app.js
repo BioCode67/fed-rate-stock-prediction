@@ -10,18 +10,24 @@
 
   App.register = function (id, def) { App.screens[id] = def; };
 
+  // 화면이 그려지는 자리. 커리큘럼 안내(#stephint)는 이 바깥에 있습니다.
+  // 화면들이 스스로 다시 그릴 때 host.innerHTML=''을 하는데, 안내가 같은
+  // 그릇에 있으면 그때 함께 지워지기 때문입니다.
+  App.host = function () { return $('#screen'); };
+  App.scrollTop = function () { const m = $('#main'); if (m) m.scrollTop = 0; };
+
   App.go = function (id) {
     if (!App.screens[id]) return;
     App.screen = id;
     $$('.nav-item').forEach(function (b) { b.classList.toggle('on', b.dataset.screen === id); });
-    const main = $('#main');
-    main.innerHTML = '';
-    main.scrollTop = 0;
+    const host = App.host();
+    host.innerHTML = '';
+    App.stepHint(id);
+    App.scrollTop();
     try {
-      App.screens[id].render(main);
-      App.stepHint(main, id);
+      App.screens[id].render(host);
     } catch (e) {
-      main.innerHTML = '<div class="panel"><div class="panel-body"><div class="note bad">' +
+      host.innerHTML = '<div class="panel"><div class="panel-body"><div class="note bad">' +
         '화면을 그리는 중 문제가 생겼습니다: ' + U.escape(e.message) + '</div></div></div>';
       console.error(e);
     }
@@ -110,7 +116,10 @@
    *  "화면 열기"로 넘어온 학생이 무엇을 하러 왔는지 잊지 않도록,
    *  지금 단계가 이 화면을 가리키면 맨 위에 할 일을 띄웁니다.
    * ----------------------------------------------------------------------*/
-  App.stepHint = function (main, screenId) {
+  App.stepHint = function (screenId) {
+    const box0 = $('#stephint');
+    if (!box0) return;
+    box0.innerHTML = '';
     const CURR = root.CURR;
     if (!CURR || screenId === 'home') return;
     const step = CURR.next();
@@ -140,7 +149,7 @@
     body.innerHTML = '<div class="small"><b>해 볼 것</b> · ' + step.do + '</div>' +
       '<div class="tiny" style="margin-top:5px">확인 질문 — ' + U.escape(step.check) + '</div>';
     box.appendChild(body);
-    main.insertBefore(box, main.firstChild);
+    box0.appendChild(box);
   };
 
   /* ------------------------------------------------------------------------

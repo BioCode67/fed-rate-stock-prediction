@@ -455,7 +455,7 @@
       ed.addEventListener('click', function () {
         S.w = a.w.slice(); S.name = a.name; S.editing = a.id; S.result = null;
         draw(host);
-        U.$('#main').scrollTop = 0;
+        App.scrollTop();
       });
       const bt = U.el('button', 'btn sm', '백테스트 →');
       bt.addEventListener('click', function () {
