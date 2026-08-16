@@ -258,6 +258,9 @@ body {
 .stat .v { font-family: var(--mono); font-size: 21px; font-variant-numeric: tabular-nums; margin-top: 2px; letter-spacing: -.01em; overflow-wrap: anywhere; }
 .stat .k, .stat .d { overflow-wrap: anywhere; }
 .stat .d { font-size: 11px; color: var(--ink-3); font-family: var(--mono); }
+.muted { color: var(--ink-3); }
+table.t tbody tr.hl { background: var(--panel-2); }
+table.t tbody tr.hl td { border-bottom-color: var(--line-strong); }
 .up { color: var(--up); }
 .down { color: var(--down); }
 .flat { color: var(--flat); }

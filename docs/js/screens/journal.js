@@ -16,7 +16,9 @@
     submit: { label: '제출', cls: 'tag ok' },
     factor: { label: '팩터 분석', cls: 'tag demo' },
     alpha: { label: '알파 평가', cls: 'tag demo' },
-    'alpha-oos': { label: '알파 채점', cls: 'tag ok' }
+    'alpha-oos': { label: '알파 채점', cls: 'tag ok' },
+    bounce: { label: '낙폭 반등', cls: 'tag demo' },
+    'bounce-oos': { label: '낙폭 채점', cls: 'tag ok' }
   };
 
   function when(ts) {
@@ -220,7 +222,8 @@
     const p = App.panel('기록', { sub: '줄을 누르면 자세히 볼 수 있습니다' });
 
     [['all', '전체'], ['backtest', '백테스트'], ['submit', '제출'],
-     ['alpha', '알파'], ['alpha-oos', '알파 채점'], ['factor', '팩터']].forEach(function (o) {
+     ['alpha', '알파'], ['alpha-oos', '알파 채점'], ['factor', '팩터'],
+     ['bounce', '낙폭 반등']].forEach(function (o) {
       const b = U.el('button', 'btn sm' + (S.filter === o[0] ? ' primary' : ''), o[1]);
       b.addEventListener('click', function () { S.filter = o[0]; draw(host); });
       p.actions.appendChild(b);
@@ -288,6 +291,17 @@
       const t = (e.top && e.top[0]) || {};
       return '시계 ' + e.horizon + '일 · IC 1위 ' + (t.name || '—') +
         ' ' + (isFinite(t.ic) ? t.ic.toFixed(3) : '—') + ' · |t|>2 팩터 ' + (e.significant || 0) + '개';
+    }
+    if (e.kind === 'bounce') {
+      return '신호 ' + U.comma(e.nSignals || 0) + '건 · 최적 보유 ' + (e.bestH || '—') + '일 · ' +
+        '기준선 대비 ' + (isFinite(e.excess) ? (e.excess * 100).toFixed(2) + '%p' : '—') +
+        ' (비용 차감 ' + (isFinite(e.net) ? (e.net * 100).toFixed(2) + '%p' : '—') + ')';
+    }
+    if (e.kind === 'bounce-oos') {
+      const i = e.is || {}, o = e.oos || {};
+      return '개발 ' + (isFinite(i.excess) ? (i.excess * 100).toFixed(2) + '%p' : '—') +
+        ' → 채점 ' + (isFinite(o.excess) ? (o.excess * 100).toFixed(2) + '%p' : '—') +
+        ' · ' + (e.peek || 1) + '번째 확인';
     }
     return e.kind;
   }

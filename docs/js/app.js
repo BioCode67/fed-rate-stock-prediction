@@ -184,12 +184,15 @@
     $$('.nav-item').forEach(function (b) {
       b.addEventListener('click', function () { App.go(b.dataset.screen); });
     });
-    // 숫자키 단축키 (터미널답게). 0 = 시작하기, 1~9 = 각 화면
+    // 숫자키 단축키 (터미널답게). 메뉴에 적힌 배지 숫자로 찾습니다 —
+    // DOM 순서로 세면 화면을 하나 끼워 넣을 때마다 단축키가 통째로 밀립니다.
     document.addEventListener('keydown', function (e) {
       if (e.target.matches('input, select, textarea')) return;
-      const items = $$('.nav-item');
-      const n = parseInt(e.key, 10);
-      if (!isNaN(n) && n >= 0 && n < items.length) App.go(items[n].dataset.screen);
+      const hit = $$('.nav-item').find(function (b) {
+        const k = b.querySelector('.key');
+        return k && k.textContent === e.key;
+      });
+      if (hit) App.go(hit.dataset.screen);
     });
 
     const boot = $('#boot');
