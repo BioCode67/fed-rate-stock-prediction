@@ -80,15 +80,30 @@
     return SIGNALS.filter(function (s) { return s.id === id; })[0] || SIGNALS[1];
   }
 
+  // AI 모드에서 모델에게 주는 재료. 신호가 난 그 시점의 '상태'입니다.
+  const AI_FEATS = [
+    ['dd', '낙폭 깊이', function (f, i) { return f.dd[i]; }],
+    ['rsi', 'RSI', function (f, i) { return f.rsi[i]; }],
+    ['g20', '20일선 대비', function (f, i) { return f.g20[i]; }],
+    ['g200', '200일선 대비', function (f, i) { return f.g200[i]; }],
+    ['m5', '최근 5일 수익', function (f, i) { return f.m5[i]; }],
+    ['vr', '거래량 급증도', function (f, i) { return f.vr[i]; }],
+    ['vol', '변동성(1개월)', function (f, i) { return f.vol[i]; }],
+    ['mkt', '그때 시장 낙폭', function (f, i, m) { return m[i]; }]
+  ];
+
   const S = {
-    mode: 'one',             // 'one' | 'compare'
+    mode: 'one',             // 'one' | 'compare' | 'ai'
     signal: 'dd20',
     cooldown: 60,            // 같은 하락에서 신호가 반복되지 않게 막는 기간
     years: 5,
     cost: 0.002,             // 왕복 거래비용 가정
     cmpH: 20,                // 전부 비교 모드에서 볼 보유 기간
+    aiModel: 'logistic',     // AI 모드에서 쓸 모델
+    aiH: 20,                 // AI 모드에서 맞히려는 보유 기간
     result: null,
     compare: null,
+    ai: null,
     compareOOS: null,
     running: false,
     oos: null,
@@ -116,13 +131,14 @@
       const s = DATA.series(t);
       if (!s) return;
       const v = DATA.state.volume[t];
-      const dd = {}, rsi = {}, g20 = {}, g200 = {}, m5 = {}, vr = {};
+      const dd = {}, rsi = {}, g20 = {}, g200 = {}, m5 = {}, vr = {}, vol = {};
       // 200일선 하향 '돌파'를 보려면 하루 앞도 필요합니다
       for (let i = lo - 1; i <= hi; i++) {
         if (i < 1) continue;
         dd[i] = IND.drawdown(s, i, DDWIN);
         rsi[i] = IND.rsi(s, i, 14);
         m5[i] = IND.mom(s, i, 5);
+        vol[i] = IND.vol(s, i, 20);
         const p = IND.px(s, i);
         const a20 = IND.ma(s, i, 20), a200 = IND.ma(s, i, 200);
         g20[i] = (isFinite(p) && a20 > 0) ? p / a20 - 1 : NaN;
@@ -134,7 +150,7 @@
           vr[i] = (ca && cb && b > 0) ? (a / ca) / (b / cb) - 1 : NaN;
         } else vr[i] = NaN;
       }
-      map[t] = { s: s, dd: dd, rsi: rsi, g20: g20, g200: g200, m5: m5, vr: vr };
+      map[t] = { s: s, dd: dd, rsi: rsi, g20: g20, g200: g200, m5: m5, vr: vr, vol: vol };
     });
 
     FEAT = { key: key, map: map };
@@ -322,6 +338,103 @@
   }
 
   /* ------------------------------------------------------------------------
+   *  AI 반등 예측
+   *
+   *  지금까지는 "낙폭이 나면 평균적으로 어떻더라"를 셌습니다.
+   *  여기서는 한 걸음 더 갑니다 — <b>이번 낙폭</b>이 반등할지를 맞혀 보는 것입니다.
+   *
+   *  신호가 난 시점의 상태(낙폭 깊이, RSI, 이동평균 대비, 거래량, 변동성, 시장 상태)를
+   *  모델에 주고, h일 뒤 오를지 내릴지를 학습시킵니다.
+   *
+   *  ★ 학습과 평가는 시간 순서로 가릅니다.
+   *    앞 70%로 배우고 뒤 30%로 시험합니다. 섞어서 나누면 미래를 보고 배운 것이 되어
+   *    성적이 거짓말처럼 좋아집니다. 이 실수가 금융 머신러닝에서 가장 흔합니다.
+   *
+   *  ★ 볼 것은 정확도가 아니라 AUC입니다.
+   *    반등이 55%인 데이터에서는 "무조건 오른다"고 찍어도 정확도가 55%입니다.
+   *    AUC 0.5는 실력이 전혀 없다는 뜻이고, 0.55만 되어도 금융에서는 쓸 만합니다.
+   * ----------------------------------------------------------------------*/
+  async function analyseAI(sig, lo, hi, h, modelId) {
+    const feats = features(lo, hi);
+    await U.yield_();
+    const list = findSignals(sig, lo, hi, feats);
+    const mdd = marketDD(lo, hi);
+    await U.yield_();
+
+    // 표본 만들기 — 시간 순서대로 정렬해 두어야 앞뒤로 가를 수 있습니다
+    const rows = [];
+    list.forEach(function (x) {
+      if (x.i + h > hi) return;
+      const f = feats[x.t];
+      const r = fwd(f.s, x.i, h);
+      if (!isFinite(r)) return;
+      const v = AI_FEATS.map(function (a) { return a[2](f, x.i, mdd); });
+      if (v.some(function (z) { return !isFinite(z); })) return;
+      rows.push({ i: x.i, t: x.t, x: v, y: r > 0 ? 1 : 0, ret: r });
+    });
+    rows.sort(function (a, b) { return a.i - b.i; });
+    await U.yield_();
+
+    if (rows.length < 80) {
+      return { tooFew: true, n: rows.length, sig: sig, h: h, model: modelId,
+        range: { start: DATA.state.dates[lo], end: DATA.state.dates[hi] } };
+    }
+
+    const cut = Math.floor(rows.length * 0.7);
+    const tr = rows.slice(0, cut), te = rows.slice(cut);
+
+    const model = root.ML.create(modelId, { featureCols: AI_FEATS.map(function (a) { return a[0]; }) });
+    model.fit(tr.map(function (r) { return r.x; }), tr.map(function (r) { return r.y; }));
+    setProg(0.6);
+    await U.yield_();
+
+    const pTr = model.predictProba(tr.map(function (r) { return r.x; }));
+    const pTe = model.predictProba(te.map(function (r) { return r.x; }));
+    const yTr = tr.map(function (r) { return r.y; });
+    const yTe = te.map(function (r) { return r.y; });
+    const M = root.M;
+
+    // 확률 구간별로 실제 반등률이 따라오는가 (캘리브레이션)
+    const bins = [[0, 0.45], [0.45, 0.5], [0.5, 0.55], [0.55, 0.6], [0.6, 1]];
+    const cal = bins.map(function (b) {
+      const sel = [];
+      for (let k = 0; k < te.length; k++) if (pTe[k] >= b[0] && pTe[k] < b[1]) sel.push(k);
+      const ys = sel.map(function (k) { return te[k].y; });
+      const rs = sel.map(function (k) { return te[k].ret; });
+      return {
+        lo: b[0], hi: b[1], n: sel.length,
+        said: sel.length ? U.mean(sel.map(function (k) { return pTe[k]; })) : NaN,
+        real: ys.length ? U.mean(ys) : NaN,
+        ret: rs.length ? U.mean(rs) : NaN
+      };
+    });
+
+    // 모델이 높게 본 것 상위 30% vs 하위 30%의 실제 성적
+    const order = U.range(te.length).sort(function (a, b) { return pTe[b] - pTe[a]; });
+    const k30 = Math.max(1, Math.floor(te.length * 0.3));
+    const topR = order.slice(0, k30).map(function (k) { return te[k].ret; });
+    const botR = order.slice(-k30).map(function (k) { return te[k].ret; });
+
+    setProg(1);
+    return {
+      sig: sig, h: h, model: modelId,
+      nTrain: tr.length, nTest: te.length,
+      baseRate: U.mean(yTe),
+      aucTrain: M.auc(yTr, Array.prototype.slice.call(pTr)),
+      aucTest: M.auc(yTe, Array.prototype.slice.call(pTe)),
+      roc: M.rocCurve(yTe, Array.prototype.slice.call(pTe)),
+      rocTrain: M.rocCurve(yTr, Array.prototype.slice.call(pTr)),
+      cal: cal,
+      top: { n: topR.length, mean: U.mean(topR), win: winRate(topR) },
+      bot: { n: botR.length, mean: U.mean(botR), win: winRate(botR) },
+      imp: model.importance ? model.importance() : null,
+      trainRange: { start: DATA.state.dates[tr[0].i], end: DATA.state.dates[tr[tr.length - 1].i] },
+      testRange: { start: DATA.state.dates[te[0].i], end: DATA.state.dates[te[te.length - 1].i] },
+      range: { start: DATA.state.dates[lo], end: DATA.state.dates[hi] }
+    };
+  }
+
+  /* ------------------------------------------------------------------------
    *  실행
    * ----------------------------------------------------------------------*/
   function bounds() {
@@ -332,7 +445,7 @@
   }
 
   async function run(host) {
-    S.running = true; S.result = null; S.compare = null;
+    S.running = true; S.result = null; S.compare = null; S.ai = null;
     S.oos = null; S.compareOOS = null;
     draw(host);
 
@@ -349,6 +462,17 @@
           net: S.result.best.net,
           tval: S.result.best.t,
           config: S.result.config
+        });
+      }
+    } else if (S.mode === 'ai') {
+      S.ai = await analyseAI(sigOf(S.signal), b.lo, b.hi, S.aiH, S.aiModel);
+      if (root.JOURNAL && !S.ai.tooFew) {
+        root.JOURNAL.add({
+          kind: 'bounce-ai',
+          name: root.ML.modelName(S.aiModel) + ' · ' + S.ai.sig.name + ' · ' + S.aiH + '일',
+          aucTrain: S.ai.aucTrain, aucTest: S.ai.aucTest,
+          nTrain: S.ai.nTrain, nTest: S.ai.nTest,
+          config: { signal: S.signal, h: S.aiH, model: S.aiModel, years: S.years, cooldown: S.cooldown }
         });
       }
     } else {
@@ -421,10 +545,11 @@
       { sub: '많이 떨어진 종목은 정말 돌아오는가 · 돌아온다면 며칠 뒤에 파는 것이 좋은가' });
 
     const seg = U.el('div', 'seg');
-    [['one', '하나 자세히 보기'], ['compare', '열 가지 전부 비교']].forEach(function (o) {
+    [['one', '하나 자세히 보기'], ['compare', '열 가지 전부 비교'], ['ai', 'AI로 예측해 보기']].forEach(function (o) {
       const b = U.el('button', S.mode === o[0] ? 'on' : '', o[1]);
       b.addEventListener('click', function () {
-        S.mode = o[0]; S.result = null; S.compare = null; S.oos = null; S.compareOOS = null;
+        S.mode = o[0];
+        S.result = null; S.compare = null; S.ai = null; S.oos = null; S.compareOOS = null;
         draw(host);
       });
       seg.appendChild(b);
@@ -453,6 +578,19 @@
       grid.appendChild(mk('신호 정의',
         SIGNALS.map(function (s) { return [s.id, s.group + ' · ' + s.name]; }),
         S.signal, function (v) { S.signal = v; draw(host); }, cur.desc));
+    } else if (S.mode === 'ai') {
+      const cur = sigOf(S.signal);
+      grid.appendChild(mk('어떤 신호를 예측할까',
+        SIGNALS.map(function (x) { return [x.id, x.group + ' · ' + x.name]; }),
+        S.signal, function (v) { S.signal = v; draw(host); }, cur.desc));
+      grid.appendChild(mk('맞히려는 보유 기간',
+        HORIZONS.map(function (x) { return [x, x + '일']; }),
+        S.aiH, function (v) { S.aiH = +v; }, '이 기간 뒤에 올랐을지를 맞힙니다'));
+      grid.appendChild(mk('모델',
+        root.ML.MODELS.filter(function (m) { return m.kind === 'ai'; })
+          .map(function (m) { return [m.id, m.name]; }),
+        S.aiModel, function (v) { S.aiModel = v; draw(host); },
+        (root.ML.MODELS.filter(function (m) { return m.id === S.aiModel; })[0] || {}).desc || ''));
     } else {
       grid.appendChild(mk('비교할 보유 기간',
         HORIZONS.map(function (h) { return [h, h + '일']; }),
@@ -746,6 +884,179 @@
   }
 
   /* ------------------------------------------------------------------------
+   *  AI 결과
+   * ----------------------------------------------------------------------*/
+  function aiPanel() {
+    const A = S.ai;
+    const p = App.panel('AI 반등 예측 · ' + U.escape(root.ML.modelName(A.model)),
+      { sub: U.escape(A.sig.name) + ' 신호가 난 시점의 상태로 ' + A.h + '일 뒤 상승 여부를 맞혀 봅니다' });
+
+    if (A.tooFew) {
+      const w = U.el('div', 'note warn');
+      w.innerHTML = '<b>표본이 ' + A.n + '건뿐이라 학습할 수 없습니다.</b> ' +
+        '모델을 학습시키려면 최소 80건은 있어야 합니다. ' +
+        '더 자주 발생하는 신호(낙폭 -10%, RSI 30 미만)를 고르거나 분석 기간을 늘리세요.';
+      p.body.appendChild(w);
+      return p;
+    }
+
+    const g = U.el('div', 'grid g4');
+    g.appendChild(App.stat('학습 표본', U.comma(A.nTrain), A.trainRange.start + ' ~ ' + A.trainRange.end));
+    g.appendChild(App.stat('시험 표본', U.comma(A.nTest), A.testRange.start + ' ~ ' + A.testRange.end));
+    g.appendChild(App.stat('AUC · 학습', isFinite(A.aucTrain) ? A.aucTrain.toFixed(3) : '—', '외운 것까지 포함'));
+    g.appendChild(App.stat('AUC · 시험', isFinite(A.aucTest) ? A.aucTest.toFixed(3) : '—',
+      '0.5 = 실력 없음', A.aucTest > 0.55 ? 'up' : (A.aucTest < 0.5 ? 'down' : '')));
+    p.body.appendChild(g);
+
+    // 판정 — 이 화면에서 학생이 가장 먼저 읽을 문장
+    const a = A.aucTest;
+    const v = U.el('div', 'verdict ' + (a >= 0.55 ? 'pass' : 'fail'));
+    v.appendChild(U.el('span', 'v-badge', a >= 0.55 ? '신호 있음' : (a >= 0.52 ? '아주 약함' : '실력 없음')));
+    const vt = U.el('div', 'v-text');
+    vt.innerHTML = a >= 0.55
+      ? '시험 구간 AUC가 <b>' + a.toFixed(3) + '</b>입니다. 금융 데이터에서 0.55는 결코 낮은 값이 아닙니다. ' +
+        '다만 학습 AUC(' + A.aucTrain.toFixed(3) + ')와의 차이를 보세요. 차이가 크면 외운 것입니다.'
+      : (a >= 0.52
+        ? '시험 구간 AUC가 <b>' + a.toFixed(3) + '</b>입니다. 0.5보다 조금 높지만 <b>거래비용을 감당할 수준은 아닙니다.</b> ' +
+          '학습 AUC는 ' + A.aucTrain.toFixed(3) + '였습니다 — 배운 것 대부분이 시험에서 사라졌습니다.'
+        : '시험 구간 AUC가 <b>' + a.toFixed(3) + '</b>입니다. ' +
+          (a < 0.5
+            ? '<b>0.5보다 낮습니다</b> — 모델이 좋게 본 쪽이 실제로는 더 나빴다는 뜻입니다. ' +
+              '여기서 "그럼 반대로 쓰면 되겠네"라고 생각하기 쉬운데, <b>그건 함정입니다.</b> ' +
+              '방향이 거꾸로인 신호가 있는 것이 아니라 애초에 신호가 없어서 아무 쪽으로나 빗나간 것이고, ' +
+              '다음 구간에서는 또 아무 쪽으로나 빗나갑니다. ' +
+              '알파 만들기 화면의 "설명 없이 부호를 뒤집지 말라"와 같은 이야기입니다. '
+            : '<b>동전 던지기와 다르지 않습니다.</b> ') +
+          '학습 구간에서는 ' + A.aucTrain.toFixed(3) + '였는데도 그렇습니다' +
+          (A.aucTrain - a > 0.15 ? ' — 배운 것이 통째로 사라졌습니다(과적합)' : '') + '. ' +
+          '모델이 나쁜 것이 아니라, 이 재료로는 개별 반등을 맞힐 수 없다는 뜻입니다. ' +
+          '<b>이것도 결과입니다.</b> 숨기지 말고 그대로 보고하세요.');
+    v.appendChild(vt);
+    p.body.appendChild(v);
+
+    // ROC
+    p.body.appendChild(U.el('div', 'tiny mt', 'ROC 곡선 — 점선(대각선)에 붙어 있으면 실력이 없다는 뜻입니다'));
+    p.body.appendChild(C.legend([
+      { name: '시험 구간', color: C.seriesColor(1) },
+      { name: '학습 구간', color: C.mutedColor() }
+    ]));
+    const rc = U.el('canvas', 'chart');
+    p.body.appendChild(rc);
+    C.roc(rc, [
+      { points: A.rocTrain, color: C.mutedColor() },
+      { points: A.roc, color: C.seriesColor(1) }
+    ]);
+
+    // 캘리브레이션 — "70%라고 한 것들이 정말 70% 올랐나"
+    p.body.appendChild(U.el('div', 'tiny mt',
+      '모델이 말한 확률과 실제로 오른 비율 (시험 구간). 기준 반등률은 ' +
+      (isFinite(A.baseRate) ? (A.baseRate * 100).toFixed(1) + '%' : '—') + '입니다.'));
+    p.body.appendChild(App.table(
+      ['모델이 말한 확률', { label: '표본', num: true }, { label: '평균 예측', num: true },
+        { label: '실제 상승률', num: true }, { label: '실제 평균수익', num: true }],
+      A.cal.map(function (c) {
+        return [
+          (c.lo * 100).toFixed(0) + '% ~ ' + (c.hi * 100).toFixed(0) + '%',
+          U.comma(c.n),
+          isFinite(c.said) ? (c.said * 100).toFixed(1) + '%' : '—',
+          isFinite(c.real) ? (c.real * 100).toFixed(1) + '%' : '—',
+          isFinite(c.ret) ? (c.ret * 100).toFixed(2) + '%' : '—'
+        ];
+      })));
+    p.body.appendChild(U.el('div', 'tiny',
+      '읽는 법 — 위에서 아래로 갈수록 <b>실제 상승률</b>도 같이 올라가야 모델이 쓸모 있는 것입니다. ' +
+      '들쭉날쭉하다면 확률을 신뢰할 수 없다는 뜻입니다. 표본이 적은 줄은 무시하세요.'));
+
+    // 상위 30% vs 하위 30%
+    const d = A.top.mean - A.bot.mean;
+    p.body.appendChild(App.table(
+      ['모델의 판단', { label: '표본', num: true }, { label: '실제 상승률', num: true }, { label: '실제 평균수익', num: true }],
+      [
+        ['<b>가장 좋게 본 30%</b>', U.comma(A.top.n),
+          isFinite(A.top.win) ? (A.top.win * 100).toFixed(1) + '%' : '—',
+          isFinite(A.top.mean) ? (A.top.mean * 100).toFixed(2) + '%' : '—'],
+        ['<b>가장 나쁘게 본 30%</b>', U.comma(A.bot.n),
+          isFinite(A.bot.win) ? (A.bot.win * 100).toFixed(1) + '%' : '—',
+          isFinite(A.bot.mean) ? (A.bot.mean * 100).toFixed(2) + '%' : '—']
+      ]));
+    const n2 = U.el('div', 'note ' + (d > 0.01 ? '' : 'warn'));
+    n2.innerHTML = '두 집단의 실제 수익 차이는 <b>' + (isFinite(d) ? (d * 100).toFixed(2) + '%p' : '—') + '</b>입니다. ' +
+      (d > 0.01
+        ? '모델이 고른 쪽이 실제로 나았습니다. 다만 왕복 거래비용(' + (S.cost * 100).toFixed(1) + '%)을 빼면 얼마가 남는지 계산해 보세요.'
+        : '<b>모델이 좋게 본 것과 나쁘게 본 것이 실제로는 거의 같습니다.</b> AUC가 조금 높게 나왔더라도 ' +
+          '돈으로 바꿀 수 없다면 의미가 없습니다. 이 표가 AUC보다 정직합니다.');
+    p.body.appendChild(n2);
+
+    // 무엇을 보고 판단했나
+    if (A.imp) {
+      p.body.appendChild(U.el('div', 'tiny mt', '모델이 무엇을 보고 판단했나'));
+      const cv = U.el('canvas', 'chart');
+      cv.style.height = Math.max(150, AI_FEATS.length * 24) + 'px';
+      p.body.appendChild(cv);
+      const items = AI_FEATS.map(function (f, k) {
+        return { label: f[1], value: A.imp[k] || 0 };
+      }).sort(function (x, y) { return y.value - x.value; });
+      C.bars(cv, {
+        items: items, baseValue: 0,
+        vFmt: function (x) { return (x * 100).toFixed(1) + '%'; }
+      });
+      p.body.appendChild(U.el('div', 'tiny',
+        '중요도가 높다고 그 재료가 <b>옳다</b>는 뜻은 아닙니다. 모델이 그 재료에 많이 기댔다는 뜻일 뿐이고, ' +
+        '시험 구간 AUC가 0.5 근처라면 그 기댐 자체가 헛것이었다는 뜻입니다.'));
+    }
+
+    return p;
+  }
+
+  function aiHonesty() {
+    const A = S.ai;
+    const p = App.panel('AI 결과를 읽을 때 <span class="accent">READ THIS</span>');
+    const add = function (title, html, cls) {
+      const n = U.el('div', 'note' + (cls ? ' ' + cls : ''));
+      n.innerHTML = '<b>' + title + '</b><br>' + html;
+      p.body.appendChild(n);
+    };
+
+    add('정확도가 아니라 AUC를 보세요',
+      '반등이 ' + (A.baseRate ? (A.baseRate * 100).toFixed(0) : '55') + '%인 데이터에서는 ' +
+      '<b>"무조건 오른다"고 찍기만 해도 정확도가 그만큼 나옵니다.</b> ' +
+      '정확도는 모델의 실력을 재지 못합니다. AUC는 "오른 것과 내린 것을 구별하는가"를 재고, ' +
+      '0.5가 실력이 전혀 없는 상태입니다.', 'warn');
+
+    add('학습과 시험을 시간 순서로 갈랐습니다',
+      '앞 70%로 배우고 뒤 30%로 시험합니다. 무작위로 섞어 나누면 <b>미래를 보고 배운 것</b>이 되어 ' +
+      '성적이 거짓말처럼 좋아집니다. 금융 머신러닝에서 가장 흔한 실수이고, 논문에서도 종종 나옵니다. ' +
+      '학습 AUC ' + (isFinite(A.aucTrain) ? A.aucTrain.toFixed(3) : '—') +
+      ' 와 시험 AUC ' + (isFinite(A.aucTest) ? A.aucTest.toFixed(3) : '—') +
+      ' 의 <b>차이가 곧 과적합의 크기</b>입니다.');
+
+    add('모델을 바꿔 가며 제일 좋은 것을 고르지 마세요',
+      '모델 4가지 × 신호 ' + SIGNALS.length + '가지 × 보유 기간 ' + HORIZONS.length + '가지 = <b>' +
+      (4 * SIGNALS.length * HORIZONS.length) + '가지</b> 조합입니다. ' +
+      '그중 시험 AUC가 가장 높은 것을 고르면, 그 시험 구간은 더 이상 시험이 아닙니다. ' +
+      '연구 노트에 시도가 남으니 <b>몇 번째 조합인지 함께 밝히세요.</b>');
+
+    add('강한 모델일수록 더 크게 무너집니다',
+      '모델을 바꿔 보세요. 랜덤포레스트나 부스팅은 로지스틱 회귀보다 <b>학습 AUC가 훨씬 높게</b> 나옵니다. ' +
+      '그런데 시험 AUC는 나아지지 않거나 오히려 떨어집니다. ' +
+      '표현력이 큰 모델은 신호가 없는 곳에서 <b>잡음까지 외워 버리기</b> 때문입니다. ' +
+      '"더 좋은 모델을 쓰면 되지 않나"라는 생각이 왜 틀리는지를 직접 확인할 수 있는 자리입니다.');
+
+    add('안 되는 것도 결과입니다',
+      'AUC가 0.5 근처로 나왔다면 실패한 실험이 아닙니다. ' +
+      '<b>"이 재료로는 개별 반등을 맞힐 수 없다"는 것을 확인한 것</b>이고, 그것도 발견입니다. ' +
+      '실제로 학계에도 같은 결론의 연구가 많습니다. 결과를 좋게 만들려고 조건을 바꿔 가며 돌리는 순간 ' +
+      '탐구가 아니라 숫자 맞추기가 됩니다.');
+
+    add('생존 편향은 여기서도 그대로입니다',
+      '학습 데이터에도 <b>결국 살아남은 종목만</b> 들어 있습니다. ' +
+      '떨어진 뒤 사라진 회사가 없으므로 모델은 "떨어지면 대체로 돌아온다"는 편향된 세상에서 배웁니다. ' +
+      '실제 시장에 그대로 쓸 수 없는 이유입니다.', 'warn');
+
+    return p;
+  }
+
+  /* ------------------------------------------------------------------------
    *  정직성
    * ----------------------------------------------------------------------*/
   function honestyPanel() {
@@ -897,6 +1208,9 @@
       if (sp) host.appendChild(sp);
       host.appendChild(honestyPanel());
       host.appendChild(oosPanel(host));
+    } else if (S.mode === 'ai' && S.ai) {
+      host.appendChild(aiPanel());
+      if (!S.ai.tooFew) host.appendChild(aiHonesty());
     } else if (S.mode === 'compare' && S.compare) {
       host.appendChild(comparePanel(host));
       host.appendChild(honestyPanel());

@@ -18,7 +18,8 @@
     alpha: { label: '알파 평가', cls: 'tag demo' },
     'alpha-oos': { label: '알파 채점', cls: 'tag ok' },
     bounce: { label: '낙폭 반등', cls: 'tag demo' },
-    'bounce-oos': { label: '낙폭 채점', cls: 'tag ok' }
+    'bounce-oos': { label: '낙폭 채점', cls: 'tag ok' },
+    'bounce-ai': { label: '반등 예측', cls: 'tag demo' }
   };
 
   function when(ts) {
@@ -296,6 +297,12 @@
       return '신호 ' + U.comma(e.nSignals || 0) + '건 · 최적 보유 ' + (e.bestH || '—') + '일 · ' +
         '기준선 대비 ' + (isFinite(e.excess) ? (e.excess * 100).toFixed(2) + '%p' : '—') +
         ' (비용 차감 ' + (isFinite(e.net) ? (e.net * 100).toFixed(2) + '%p' : '—') + ')';
+    }
+    if (e.kind === 'bounce-ai') {
+      return '학습 ' + U.comma(e.nTrain || 0) + '건 / 시험 ' + U.comma(e.nTest || 0) + '건 · ' +
+        'AUC 학습 ' + (isFinite(e.aucTrain) ? e.aucTrain.toFixed(3) : '—') +
+        ' → 시험 ' + (isFinite(e.aucTest) ? e.aucTest.toFixed(3) : '—') +
+        (isFinite(e.aucTest) && e.aucTest < 0.52 ? ' (실력 없음)' : '');
     }
     if (e.kind === 'bounce-oos') {
       const i = e.is || {}, o = e.oos || {};
