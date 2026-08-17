@@ -587,8 +587,11 @@
         HORIZONS.map(function (x) { return [x, x + '일']; }),
         S.aiH, function (v) { S.aiH = +v; }, '이 기간 뒤에 올랐을지를 맞힙니다'));
       grid.appendChild(mk('모델',
-        root.ML.MODELS.filter(function (m) { return m.kind === 'ai'; })
-          .map(function (m) { return [m.id, m.name]; }),
+        root.ML.MODELS
+          .filter(function (m) { return m.kind === 'ai' || m.id === 'alwaysup' || m.id === 'random'; })
+          .map(function (m) {
+            return [m.id, (m.kind === 'ai' ? 'AI · ' : '기준선 · ') + m.name];
+          }),
         S.aiModel, function (v) { S.aiModel = v; draw(host); },
         (root.ML.MODELS.filter(function (m) { return m.id === S.aiModel; })[0] || {}).desc || ''));
     } else {
@@ -910,6 +913,18 @@
 
     // 판정 — 이 화면에서 학생이 가장 먼저 읽을 문장
     const a = A.aucTest;
+    if (root.ML.isRule(A.model)) {
+      const rn = U.el('div', 'note');
+      rn.innerHTML =
+        '<b>이것은 AI가 아니라 기준선입니다.</b> ' +
+        (A.model === 'alwaysup'
+          ? '아무 것도 배우지 않고 <b>무조건 오른다</b>고만 답합니다. '
+          : '동전을 던져 <b>아무렇게나</b> 답합니다. ') +
+        'AUC가 <b>0.5 근처</b>로 나오는 것이 정상입니다. ' +
+        '<b>AI 모델을 골랐을 때 이 값보다 확실히 높지 않다면, 그 AI는 아무것도 배우지 못한 것입니다.</b> ' +
+        '모델을 비교할 때는 반드시 이 기준선을 먼저 재 두고 시작하세요.';
+      p.body.appendChild(rn);
+    }
     const v = U.el('div', 'verdict ' + (a >= 0.55 ? 'pass' : 'fail'));
     v.appendChild(U.el('span', 'v-badge', a >= 0.55 ? '신호 있음' : (a >= 0.52 ? '아주 약함' : '실력 없음')));
     const vt = U.el('div', 'v-text');
